@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.log
+.DS_Store
+
+# Ignore user data but keep the folder structure
+data/users.json
