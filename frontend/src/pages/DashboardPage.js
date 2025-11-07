@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatsCard from '../components/StatsCard';
 import {
@@ -51,25 +52,553 @@ function PlusIcon({ className }) {
   );
 }
 
-const activityData = [
-  { name: "Mon", cvs: 2, jobs: 1 },
-  { name: "Tue", cvs: 3, jobs: 2 },
-  { name: "Wed", cvs: 1, jobs: 1 },
-  { name: "Thu", cvs: 4, jobs: 3 },
-  { name: "Fri", cvs: 3, jobs: 2 },
-  { name: "Sat", cvs: 2, jobs: 1 },
-  { name: "Sun", cvs: 1, jobs: 0 },
+const defaultWeeklyActivity = [
+  { name: 'Mon', cvs: 2, jobs: 1 },
+  { name: 'Tue', cvs: 3, jobs: 2 },
+  { name: 'Wed', cvs: 1, jobs: 1 },
+  { name: 'Thu', cvs: 4, jobs: 3 },
+  { name: 'Fri', cvs: 0, jobs: 0 },
+  { name: 'Sat', cvs: 2, jobs: 1 },
+  { name: 'Sun', cvs: 1, jobs: 5 }
 ];
 
-const recentActivities = [
-  { action: "Created CV for Senior Developer position", time: "2 hours ago" },
-  { action: "Applied to Frontend Engineer at Tech Corp", time: "5 hours ago" },
-  { action: "CV downloaded by Startup Inc", time: "1 day ago" },
-  { action: "Profile updated with new skills", time: "2 days ago" },
+const recentJobsSeed = [
+  {
+    id: 'job-1',
+    title: 'Senior Developer',
+    company: 'TechCorp',
+    appliedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'job-2',
+    title: 'Frontend Engineer',
+    company: 'Startup Inc',
+    appliedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'job-3',
+    title: 'UI/UX Designer',
+    company: 'Creative Studio',
+    appliedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'job-4',
+    title: 'Product Manager',
+    company: 'Innovate Labs',
+    appliedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+  }
 ];
+
+let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+const API_BASE_URL = apiBaseUrl;
+
+const defaultAnalytics = {
+  cvsCreated: {
+    value: '12',
+    trend: 2,
+    trendUp: true
+  },
+  jobsApplied: {
+    value: '8',
+    trend: 3,
+    trendUp: true
+  },
+  cvsSent: {
+    value: '15',
+    trend: 5,
+    trendUp: true
+  },
+  skillMatch: {
+    value: '87%',
+    trend: 5,
+    trendUp: true
+  }
+};
+
+function normalizeAnalytics(analytics) {
+  return Object.keys(defaultAnalytics).reduce((acc, key) => {
+    const defaultEntry = defaultAnalytics[key];
+    const source = analytics && analytics[key] ? analytics[key] : {};
+    const sourceTrend = source.trend;
+    let numericTrend = defaultEntry.trend;
+
+    if (sourceTrend !== undefined && sourceTrend !== null) {
+      const trendMatch = String(sourceTrend).match(/-?\d+(?:\.\d+)?/);
+      if (trendMatch) {
+        const parsedTrend = Number(trendMatch[0]);
+        if (!Number.isNaN(parsedTrend)) {
+          numericTrend = Math.abs(parsedTrend);
+        }
+      }
+    }
+
+    acc[key] = {
+      value: source.value !== undefined && source.value !== null
+        ? String(source.value)
+        : defaultEntry.value,
+      trend: numericTrend,
+      trendUp: typeof source.trendUp === 'boolean'
+        ? source.trendUp
+        : defaultEntry.trendUp
+    };
+
+    return acc;
+  }, {});
+}
+
+const trendSuffixMap = {
+  cvsCreated: ' this week',
+  jobsApplied: ' this week',
+  cvsSent: ' this week',
+  skillMatch: '% this month'
+};
+
+function getTrendText(key, entry) {
+  if (!entry || entry.trend === undefined || entry.trend === null) {
+    return '';
+  }
+
+  const numericTrend = Number(entry.trend);
+  if (Number.isNaN(numericTrend)) {
+    return '';
+  }
+
+  const sign = entry.trendUp ? '+' : '-';
+  const suffix = trendSuffixMap[key] ?? '';
+  const magnitude = Math.abs(numericTrend);
+
+  return `${sign}${magnitude}${suffix}`;
+}
+
+function normalizeWeeklyActivity(activity) {
+  const sanitized = Array.isArray(activity) ? activity : [];
+  const usedKeys = new Set();
+
+  const normalized = defaultWeeklyActivity.map((day) => {
+    const match = sanitized.find((item) =>
+      item && typeof item === 'object' && item.name && item.name.toLowerCase() === day.name.toLowerCase()
+    );
+
+    if (match?.name) {
+      usedKeys.add(match.name.toLowerCase());
+    }
+
+    const cvsValue = match?.cvs !== undefined && match?.cvs !== null && !Number.isNaN(Number(match.cvs))
+      ? Number(match.cvs)
+      : day.cvs;
+
+    const jobsValue = match?.jobs !== undefined && match?.jobs !== null && !Number.isNaN(Number(match.jobs))
+      ? Number(match.jobs)
+      : day.jobs;
+
+    return {
+      name: match?.name || day.name,
+      cvs: cvsValue,
+      jobs: jobsValue
+    };
+  });
+
+  const extraEntries = sanitized
+    .filter((item) => item && typeof item === 'object' && item.name && !usedKeys.has(item.name.toLowerCase()))
+    .map((item) => {
+      const name = String(item.name).trim();
+      const cvsValue = item.cvs !== undefined && item.cvs !== null && !Number.isNaN(Number(item.cvs))
+        ? Number(item.cvs)
+        : 0;
+      const jobsValue = item.jobs !== undefined && item.jobs !== null && !Number.isNaN(Number(item.jobs))
+        ? Number(item.jobs)
+        : 0;
+
+      return {
+        name: name.length > 0 ? name : 'Day',
+        cvs: cvsValue,
+        jobs: jobsValue
+      };
+    });
+
+  return [...normalized, ...extraEntries];
+}
+
+function normalizeRecentJobs(jobs) {
+  if (!Array.isArray(jobs)) {
+    return recentJobsSeed;
+  }
+
+  return jobs
+    .map((job, index) => {
+      if (!job || typeof job !== 'object') {
+        return null;
+      }
+
+      const id = job.id ? String(job.id).trim() : `job-${index}`;
+      const title = job.title ? String(job.title).trim() : '';
+      const company = job.company ? String(job.company).trim() : '';
+      const appliedAtDate = job.appliedAt ? new Date(job.appliedAt) : null;
+      const appliedAt = appliedAtDate && !Number.isNaN(appliedAtDate.getTime())
+        ? appliedAtDate.toISOString()
+        : new Date().toISOString();
+
+      if (!title || !company) {
+        return null;
+      }
+
+      return {
+        id,
+        title,
+        company,
+        appliedAt
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt));
+}
+
+function formatTimeAgo(dateString) {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return `${days}d ago`;
+  }
+  const weeks = Math.floor(days / 7);
+  if (weeks < 4) {
+    return `${weeks}w ago`;
+  }
+  const months = Math.floor(days / 30);
+  if (months < 12) {
+    return `${months}mo ago`;
+  }
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
 
 function DashboardPage() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [analytics, setAnalytics] = useState(defaultAnalytics);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState('');
+  const [weeklyActivity, setWeeklyActivity] = useState(defaultWeeklyActivity);
+  const [weeklyActivityLoading, setWeeklyActivityLoading] = useState(true);
+  const [weeklyActivityError, setWeeklyActivityError] = useState('');
+  const [recentJobs, setRecentJobs] = useState(recentJobsSeed);
+  const [recentJobsLoading, setRecentJobsLoading] = useState(true);
+  const [recentJobsError, setRecentJobsError] = useState('');
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const userData = JSON.parse(userStr);
+        setUser(userData);
+      }
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user?.recentJobs) {
+      const normalized = normalizeRecentJobs(user.recentJobs);
+      setRecentJobs(normalized);
+      setRecentJobsLoading(false);
+    }
+  }, [user?.recentJobs]);
+
+  const userId = user?.id;
+
+  const updateCachedUserAnalytics = (nextAnalytics) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const prevAnalytics = prev.analytics || {};
+      if (JSON.stringify(prevAnalytics) === JSON.stringify(nextAnalytics)) {
+        return prev;
+      }
+      const updatedUser = { ...prev, analytics: nextAnalytics };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+  };
+
+  const updateCachedWeeklyActivity = (nextActivity) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const prevActivity = prev.weeklyActivity || [];
+      if (JSON.stringify(prevActivity) === JSON.stringify(nextActivity)) {
+        return prev;
+      }
+      const updatedUser = { ...prev, weeklyActivity: nextActivity };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+  };
+
+  const updateCachedRecentJobs = (nextJobs) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const prevJobs = prev.recentJobs || [];
+      if (JSON.stringify(prevJobs) === JSON.stringify(nextJobs)) {
+        return prev;
+      }
+      const updatedUser = { ...prev, recentJobs: nextJobs };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+  };
+
+  const saveAnalytics = async (nextAnalytics, { silent = false, updateState = true } = {}) => {
+    if (!userId) return false;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/profile/analytics`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId,
+          analytics: nextAnalytics
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update analytics');
+      }
+
+      const normalized = normalizeAnalytics(data.analytics);
+
+      if (updateState) {
+        setAnalytics(normalized);
+      }
+      updateCachedUserAnalytics(normalized);
+
+      return true;
+    } catch (error) {
+      console.error('Save analytics error:', error);
+      if (!silent) {
+        setAnalyticsError(error.message || 'Failed to update analytics.');
+      }
+      return false;
+    }
+  };
+
+  const saveWeeklyActivity = async (nextActivity, { silent = false, updateState = true } = {}) => {
+    if (!userId) return false;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/profile/activity`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId,
+          weeklyActivity: nextActivity
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update weekly activity');
+      }
+
+      const normalized = normalizeWeeklyActivity(data.weeklyActivity);
+
+      if (updateState) {
+        setWeeklyActivity(normalized);
+      }
+      updateCachedWeeklyActivity(normalized);
+
+      return true;
+    } catch (error) {
+      console.error('Save weekly activity error:', error);
+      if (!silent) {
+        setWeeklyActivityError(error.message || 'Failed to update weekly activity.');
+      }
+      return false;
+    }
+  };
+
+  const saveRecentJobs = async (nextJobs, { silent = false, updateState = true } = {}) => {
+    if (!userId) return false;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/profile/recent-jobs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId,
+          recentJobs: nextJobs
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update recent jobs');
+      }
+
+      const normalized = normalizeRecentJobs(data.recentJobs);
+
+      if (updateState) {
+        setRecentJobs(normalized);
+      }
+      updateCachedRecentJobs(normalized);
+
+      return true;
+    } catch (error) {
+      console.error('Save recent jobs error:', error);
+      if (!silent) {
+        setRecentJobsError(error.message || 'Failed to update recent jobs.');
+      }
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (!userId) {
+      setAnalyticsLoading(false);
+      setWeeklyActivityLoading(false);
+      setRecentJobs(recentJobsSeed);
+      setRecentJobsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchAnalytics = async () => {
+      setAnalyticsLoading(true);
+      setAnalyticsError('');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/profile/analytics/${userId}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load analytics');
+        }
+
+        const normalized = normalizeAnalytics(data.analytics);
+
+        if (!isMounted) return;
+
+        setAnalytics(normalized);
+        updateCachedUserAnalytics(normalized);
+
+        if (data.isDefault) {
+          await saveAnalytics(normalized, { silent: true, updateState: false });
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error('Fetch analytics error:', error);
+        setAnalyticsError(error.message || 'Failed to load analytics. Showing defaults.');
+        setAnalytics(defaultAnalytics);
+      } finally {
+        if (isMounted) {
+          setAnalyticsLoading(false);
+        }
+      }
+    };
+
+    const fetchWeeklyActivity = async () => {
+      setWeeklyActivityLoading(true);
+      setWeeklyActivityError('');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/profile/activity/${userId}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load weekly activity');
+        }
+
+        const normalized = normalizeWeeklyActivity(data.weeklyActivity);
+
+        if (!isMounted) return;
+
+        setWeeklyActivity(normalized);
+        updateCachedWeeklyActivity(normalized);
+
+        if (data.isDefault) {
+          await saveWeeklyActivity(normalized, { silent: true, updateState: false });
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error('Fetch weekly activity error:', error);
+        setWeeklyActivityError(error.message || 'Failed to load weekly activity. Showing defaults.');
+        setWeeklyActivity(defaultWeeklyActivity);
+      } finally {
+        if (isMounted) {
+          setWeeklyActivityLoading(false);
+        }
+      }
+    };
+
+    const fetchRecentJobs = async () => {
+      setRecentJobsLoading(true);
+      setRecentJobsError('');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/profile/recent-jobs/${userId}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load recent jobs');
+        }
+
+        const normalized = normalizeRecentJobs(data.recentJobs);
+
+        if (!isMounted) return;
+
+        setRecentJobs(normalized);
+        updateCachedRecentJobs(normalized);
+
+        if (data.isDefault) {
+          await saveRecentJobs(normalized, { silent: true, updateState: false });
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error('Fetch recent jobs error:', error);
+        setRecentJobsError(error.message || 'Failed to load recent jobs. Showing defaults.');
+        setRecentJobs(recentJobsSeed);
+      } finally {
+        if (isMounted) {
+          setRecentJobsLoading(false);
+        }
+      }
+    };
+
+    fetchAnalytics();
+    fetchWeeklyActivity();
+    fetchRecentJobs();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
+
+  const greetingName = user?.fullName ? user.fullName.split(' ')[0] : 'there';
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -77,7 +606,7 @@ function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold mb-2 dark:text-gray-200 text-gray-900">
-              Welcome back, John!
+              {`Welcome back, ${greetingName}!`}
             </h1>
             <p className="text-sm sm:text-base dark:text-gray-400 text-gray-500">
               Here's what's happening with your job search today
@@ -105,33 +634,76 @@ function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <StatsCard
             title="CVs Created"
-            value="12"
+            value={analytics.cvsCreated.value}
             icon={FileTextIcon}
-            trend="+2 this week"
-            trendUp={true}
+            trend={getTrendText('cvsCreated', analytics.cvsCreated)}
+            trendUp={analytics.cvsCreated.trendUp}
           />
           <StatsCard
             title="Jobs Applied"
-            value="8"
+            value={analytics.jobsApplied.value}
             icon={BriefcaseIcon}
-            trend="+3 this week"
-            trendUp={true}
+            trend={getTrendText('jobsApplied', analytics.jobsApplied)}
+            trendUp={analytics.jobsApplied.trendUp}
           />
           <StatsCard
             title="CVs Sent"
-            value="15"
+            value={analytics.cvsSent.value}
             icon={SendIcon}
-            trend="+5 this week"
-            trendUp={true}
+            trend={getTrendText('cvsSent', analytics.cvsSent)}
+            trendUp={analytics.cvsSent.trendUp}
           />
           <StatsCard
             title="Skill Match"
-            value="87%"
+            value={analytics.skillMatch.value}
             icon={TrendingUpIcon}
-            trend="+5% this month"
-            trendUp={true}
+            trend={getTrendText('skillMatch', analytics.skillMatch)}
+            trendUp={analytics.skillMatch.trendUp}
           />
         </div>
+        {(analyticsLoading || analyticsError || weeklyActivityLoading || weeklyActivityError || recentJobsLoading || recentJobsError) && (
+          <div>
+            {analyticsLoading && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Syncing your analytics...
+              </p>
+            )}
+            {analyticsError && (
+              <div
+                className="mt-2 rounded-lg border border-[rgba(212,24,61,0.25)] bg-[rgba(212,24,61,0.08)] px-3 py-2 text-xs"
+                style={{ color: '#D4183D' }}
+              >
+                {analyticsError}
+              </div>
+            )}
+            {weeklyActivityLoading && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Loading weekly activity...
+              </p>
+            )}
+            {weeklyActivityError && (
+              <div
+                className="mt-2 rounded-lg border border-[rgba(212,24,61,0.25)] bg-[rgba(212,24,61,0.08)] px-3 py-2 text-xs"
+                style={{ color: '#D4183D' }}
+              >
+                {weeklyActivityError}
+              </div>
+            )}
+            {recentJobsLoading && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Loading recent jobs...
+              </p>
+            )}
+            {recentJobsError && (
+              <div
+                className="mt-2 rounded-lg border border-[rgba(212,24,61,0.25)] bg-[rgba(212,24,61,0.08)] px-3 py-2 text-xs"
+                style={{ color: '#D4183D' }}
+              >
+                {recentJobsError}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Charts and Activity Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -145,7 +717,7 @@ function DashboardPage() {
                 <p className="text-sm dark:text-gray-400 text-gray-500">Your CV creation and job application trends</p>
               </div>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={activityData}>
+                <LineChart data={weeklyActivity}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(108, 166, 205, 0.1)" />
                   <XAxis
                     dataKey="name"
@@ -182,18 +754,18 @@ function DashboardPage() {
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Recent Jobs */}
           <div 
             className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
           >
             <div className="p-4 sm:p-6">
               <div className="mb-4">
-                <h3 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">Recent Activity</h3>
-                <p className="text-sm dark:text-gray-400 text-gray-500">Your latest actions</p>
+                <h3 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">Recent Jobs</h3>
+                <p className="text-sm dark:text-gray-400 text-gray-500">Your latest applications and activity</p>
               </div>
               <div className="space-y-4">
-                {recentActivities.map((activity, index) => (
-                  <div key={index} className="flex gap-3">
+                {recentJobs.map((job) => (
+                  <div key={job.id} className="flex gap-3">
                     <div 
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                       style={{
@@ -206,9 +778,12 @@ function DashboardPage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm dark:text-gray-200 text-gray-900">{activity.action}</p>
+                      <p className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                        {job.title}
+                        <span className="dark:text-gray-400 text-gray-500"> — {job.company}</span>
+                      </p>
                       <p className="text-xs mt-0.5 dark:text-gray-400 text-gray-500">
-                        {activity.time}
+                        {formatTimeAgo(job.appliedAt)}
                       </p>
                     </div>
                   </div>

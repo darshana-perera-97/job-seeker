@@ -2,7 +2,94 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { findUserByEmail, addUser, findUserById, updateUser } = require('./utils/userStorage');
-const { findProfileByUserId, upsertProfile } = require('./utils/profileStorage');
+const { findProfileByUserId, upsertProfile, sanitizeWeeklyActivity, sanitizeRecentJobs } = require('./utils/profileStorage');
+
+const defaultPreferences = {
+  emailNotifications: true,
+  jobRecommendations: true,
+  applicationUpdates: true,
+  marketingEmails: false
+};
+
+const defaultAnalytics = {
+  cvsCreated: {
+    value: '0',
+    trend: 0,
+    trendUp: true
+  },
+  jobsApplied: {
+    value: '0',
+    trend: 0,
+    trendUp: true
+  },
+  cvsSent: {
+    value: '0',
+    trend: 0,
+    trendUp: true
+  },
+  skillMatch: {
+    value: '0%',
+    trend: 0,
+    trendUp: true
+  }
+};
+
+const defaultWeeklyActivity = [
+  { name: 'Mon', cvs: 0, jobs: 0 },
+  { name: 'Tue', cvs: 0, jobs: 0 },
+  { name: 'Wed', cvs: 0, jobs: 0 },
+  { name: 'Thu', cvs: 0, jobs: 0 },
+  { name: 'Fri', cvs: 0, jobs: 0 },
+  { name: 'Sat', cvs: 0, jobs: 0 },
+  { name: 'Sun', cvs: 0, jobs: 0 }
+];
+
+const defaultRecentJobs = [
+  {
+    id: 'job-1',
+    title: 'Senior Developer',
+    company: 'TechCorp',
+    appliedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'job-2',
+    title: 'Frontend Engineer',
+    company: 'Startup Inc',
+    appliedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'job-3',
+    title: 'UI/UX Designer',
+    company: 'Creative Studio',
+    appliedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'job-4',
+    title: 'Product Manager',
+    company: 'Innovate Labs',
+    appliedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+  }
+];
+
+function normalizeRecentJobsData(jobs) {
+  const sanitized = sanitizeRecentJobs(jobs) || [];
+
+  const normalized = sanitized.map((job, index) => {
+    const appliedDate = new Date(job.appliedAt);
+    const appliedAt = !Number.isNaN(appliedDate.getTime())
+      ? appliedDate.toISOString()
+      : new Date().toISOString();
+
+    return {
+      id: job.id || `job-${index}`,
+      title: job.title || 'Job Title',
+      company: job.company || 'Company',
+      appliedAt
+    };
+  });
+
+  return normalized.sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt));
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -379,13 +466,6 @@ app.get('/api/profile/preferences/:userId', (req, res) => {
 
     const profile = findProfileByUserId(userId);
 
-    const defaultPreferences = {
-      emailNotifications: true,
-      jobRecommendations: true,
-      applicationUpdates: true,
-      marketingEmails: false
-    };
-
     if (!profile || !profile.preferences) {
       return res.status(200).json({
         success: true,
@@ -463,6 +543,387 @@ app.post('/api/profile/preferences', (req, res) => {
   }
 });
 
+// Get profile analytics endpoint
+app.get('/api/profile/analytics/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const profile = findProfileByUserId(userId);
+
+    if (!profile || !profile.analytics) {
+      return res.status(200).json({
+        success: true,
+        analytics: defaultAnalytics,
+        isDefault: true
+      });
+    }
+
+    const mergedAnalytics = Object.keys(defaultAnalytics).reduce((acc, key) => {
+      const defaultEntry = defaultAnalytics[key];
+      const profileEntry = profile.analytics[key] || {};
+      const profileTrend = profileEntry.trend;
+      const trendNumber = profileTrend !== undefined && profileTrend !== null && !Number.isNaN(Number(profileTrend))
+        ? Math.abs(Number(profileTrend))
+        : defaultEntry.trend;
+
+      acc[key] = {
+        value: profileEntry.value !== undefined ? String(profileEntry.value) : defaultEntry.value,
+        trend: trendNumber,
+        trendUp: typeof profileEntry.trendUp === 'boolean' ? profileEntry.trendUp : defaultEntry.trendUp
+      };
+
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      success: true,
+      analytics: mergedAnalytics,
+      isDefault: false
+    });
+  } catch (error) {
+    console.error('Get profile analytics error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Update profile analytics endpoint
+app.post('/api/profile/analytics', (req, res) => {
+  try {
+    const { userId, analytics } = req.body;
+
+    if (!userId || !analytics || typeof analytics !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and analytics data are required'
+      });
+    }
+
+    const result = upsertProfile(userId, {
+      analytics
+    });
+
+    if (result.success) {
+      const profileAnalytics = result.profile.analytics || {};
+
+      const mergedAnalytics = Object.keys(defaultAnalytics).reduce((acc, key) => {
+        const defaultEntry = defaultAnalytics[key];
+        const profileEntry = profileAnalytics[key] || {};
+        const profileTrend = profileEntry.trend;
+        const trendNumber = profileTrend !== undefined && profileTrend !== null && !Number.isNaN(Number(profileTrend))
+          ? Math.abs(Number(profileTrend))
+          : defaultEntry.trend;
+
+        acc[key] = {
+          value: profileEntry.value !== undefined ? String(profileEntry.value) : defaultEntry.value,
+          trend: trendNumber,
+          trendUp: typeof profileEntry.trendUp === 'boolean' ? profileEntry.trendUp : defaultEntry.trendUp
+        };
+
+        return acc;
+      }, {});
+
+      return res.status(200).json({
+        success: true,
+        message: 'Analytics updated successfully',
+        analytics: mergedAnalytics
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to update analytics'
+    });
+  } catch (error) {
+    console.error('Update profile analytics error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Get weekly activity endpoint
+app.get('/api/profile/activity/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const profile = findProfileByUserId(userId);
+    const sanitized = sanitizeWeeklyActivity(profile?.weeklyActivity);
+
+    if (!sanitized) {
+      return res.status(200).json({
+        success: true,
+        weeklyActivity: defaultWeeklyActivity,
+        isDefault: true
+      });
+    }
+
+    const mergedWeeklyActivity = defaultWeeklyActivity.map((day) => {
+      const match = sanitized.find((item) =>
+        item.name && item.name.toLowerCase() === day.name.toLowerCase()
+      );
+
+      return {
+        name: match?.name || day.name,
+        cvs: typeof match?.cvs === 'number' ? match.cvs : day.cvs,
+        jobs: typeof match?.jobs === 'number' ? match.jobs : day.jobs
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      weeklyActivity: mergedWeeklyActivity,
+      isDefault: false
+    });
+  } catch (error) {
+    console.error('Get profile activity error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Update weekly activity endpoint
+app.post('/api/profile/activity', (req, res) => {
+  try {
+    const { userId, weeklyActivity } = req.body;
+
+    if (!userId || !weeklyActivity) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and weekly activity data are required'
+      });
+    }
+
+    const sanitized = sanitizeWeeklyActivity(weeklyActivity);
+
+    if (!sanitized) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid weekly activity data'
+      });
+    }
+
+    const result = upsertProfile(userId, {
+      weeklyActivity: sanitized
+    });
+
+    if (result.success) {
+      const profileWeeklyActivity = sanitizeWeeklyActivity(result.profile.weeklyActivity) || defaultWeeklyActivity;
+
+      const mergedWeeklyActivity = defaultWeeklyActivity.map((day) => {
+        const match = profileWeeklyActivity.find((item) =>
+          item.name && item.name.toLowerCase() === day.name.toLowerCase()
+        );
+
+        return {
+          name: match?.name || day.name,
+          cvs: typeof match?.cvs === 'number' ? match.cvs : day.cvs,
+          jobs: typeof match?.jobs === 'number' ? match.jobs : day.jobs
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Weekly activity updated successfully',
+        weeklyActivity: mergedWeeklyActivity
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to update weekly activity'
+    });
+  } catch (error) {
+    console.error('Update profile activity error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Get recent jobs endpoint
+app.get('/api/profile/recent-jobs/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const profile = findProfileByUserId(userId);
+    const sanitized = sanitizeRecentJobs(profile?.recentJobs);
+
+    if (!sanitized) {
+      return res.status(200).json({
+        success: true,
+        recentJobs: defaultRecentJobs,
+        isDefault: true
+      });
+    }
+
+    const normalized = normalizeRecentJobsData(sanitized);
+
+    return res.status(200).json({
+      success: true,
+      recentJobs: normalized,
+      isDefault: false
+    });
+  } catch (error) {
+    console.error('Get recent jobs error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Update recent jobs endpoint
+app.post('/api/profile/recent-jobs', (req, res) => {
+  try {
+    const { userId, recentJobs } = req.body;
+
+    if (!userId || !recentJobs) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and recent jobs data are required'
+      });
+    }
+
+    const sanitized = sanitizeRecentJobs(recentJobs);
+
+    if (!sanitized) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid recent jobs data'
+      });
+    }
+
+    const result = upsertProfile(userId, {
+      recentJobs: sanitized
+    });
+
+    if (result.success) {
+      const normalized = normalizeRecentJobsData(result.profile.recentJobs || []);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Recent jobs updated successfully',
+        recentJobs: normalized
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to update recent jobs'
+    });
+  } catch (error) {
+    console.error('Update recent jobs error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Get profile skills endpoint
+app.get('/api/profile/skills/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const profile = findProfileByUserId(userId);
+
+    if (!profile || !Array.isArray(profile.skills)) {
+      return res.status(200).json({
+        success: true,
+        skills: []
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      skills: profile.skills
+    });
+  } catch (error) {
+    console.error('Get profile skills error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Update profile skills endpoint
+app.post('/api/profile/skills', (req, res) => {
+  try {
+    const { userId, skills } = req.body;
+
+    if (!userId || !Array.isArray(skills)) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and skills array are required'
+      });
+    }
+
+    const sanitizedSkills = skills
+      .filter(skill => typeof skill === 'string')
+      .map(skill => skill.trim())
+      .filter(skill => skill.length > 0);
+
+    const result = upsertProfile(userId, {
+      skills: sanitizedSkills
+    });
+
+    if (result.success) {
+      return res.status(200).json({
+        success: true,
+        message: 'Skills updated successfully',
+        skills: result.profile.skills || []
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to update skills'
+    });
+  } catch (error) {
+    console.error('Update profile skills error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
 // 404 handler for undefined routes
 app.use((req, res) => {
   res.status(404).json({
@@ -476,7 +937,15 @@ app.use((req, res) => {
       'POST /api/login/google',
       'POST /api/change-password',
       'GET /api/profile/preferences/:userId',
-      'POST /api/profile/preferences'
+      'POST /api/profile/preferences',
+      'GET /api/profile/analytics/:userId',
+      'POST /api/profile/analytics',
+      'GET /api/profile/activity/:userId',
+      'POST /api/profile/activity',
+      'GET /api/profile/recent-jobs/:userId',
+      'POST /api/profile/recent-jobs',
+      'GET /api/profile/skills/:userId',
+      'POST /api/profile/skills'
     ]
   });
 });
@@ -493,5 +962,13 @@ app.listen(PORT, () => {
   console.log(`  POST http://localhost:${PORT}/api/change-password`);
   console.log(`  GET  http://localhost:${PORT}/api/profile/preferences/:userId`);
   console.log(`  POST http://localhost:${PORT}/api/profile/preferences`);
+  console.log(`  GET  http://localhost:${PORT}/api/profile/analytics/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/profile/analytics`);
+  console.log(`  GET  http://localhost:${PORT}/api/profile/activity/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/profile/activity`);
+  console.log(`  GET  http://localhost:${PORT}/api/profile/recent-jobs/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/profile/recent-jobs`);
+  console.log(`  GET  http://localhost:${PORT}/api/profile/skills/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/profile/skills`);
 });
 

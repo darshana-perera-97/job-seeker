@@ -27,11 +27,21 @@ function Trash2Icon({ className }) {
   );
 }
 
+let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+const API_BASE_URL = apiBaseUrl;
+
 function ProfilePage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [skills, setSkills] = useState([]);
   const [newSkill, setNewSkill] = useState('');
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillsSaving, setSkillsSaving] = useState(false);
+  const [skillsError, setSkillsError] = useState('');
+  const [skillsMessage, setSkillsMessage] = useState('');
+
+  const userId = user?.id;
 
   // Get user data from localStorage
   useEffect(() => {
@@ -40,15 +50,113 @@ function ProfilePage() {
       if (userStr) {
         const userData = JSON.parse(userStr);
         setUser(userData);
-        // Load skills from user data if available
-        if (userData.skills && Array.isArray(userData.skills)) {
-          setSkills(userData.skills);
-        }
       }
     } catch (error) {
       console.error('Error parsing user data:', error);
     }
   }, []);
+
+  // Load skills from backend when user is available
+  useEffect(() => {
+    const fetchSkills = async () => {
+      if (!userId) {
+        return;
+      }
+
+      setSkillsLoading(true);
+      setSkillsError('');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/profile/skills/${userId}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load skills');
+        }
+
+        const fetchedSkills = Array.isArray(data.skills) ? data.skills : [];
+        setSkills(fetchedSkills);
+        setUser((prev) => {
+          if (!prev) return prev;
+          const prevSkills = Array.isArray(prev.skills) ? prev.skills : [];
+          const isSameLength = prevSkills.length === fetchedSkills.length;
+          const isSameSkills = isSameLength && prevSkills.every((skill, index) => skill === fetchedSkills[index]);
+
+          if (isSameSkills) {
+            return prev;
+          }
+
+          const updatedUser = { ...prev, skills: fetchedSkills };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          return updatedUser;
+        });
+      } catch (error) {
+        console.error('Fetch skills error:', error);
+        setSkillsError(error.message || 'Failed to load skills. Using cached data.');
+      } finally {
+        setSkillsLoading(false);
+      }
+    };
+
+    fetchSkills();
+  }, [userId]);
+
+  const saveSkills = async (nextSkills, previousSkills) => {
+    if (!userId) return false;
+
+    setSkills(nextSkills);
+    setSkillsSaving(true);
+    setSkillsError('');
+    setSkillsMessage('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/profile/skills`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId,
+          skills: nextSkills
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update skills');
+      }
+
+      const updatedSkills = Array.isArray(data.skills) ? data.skills : nextSkills;
+      setSkills(updatedSkills);
+      setSkillsMessage('Skills updated');
+      setTimeout(() => setSkillsMessage(''), 2000);
+
+      setUser((prev) => {
+        if (!prev) return prev;
+        const prevSkills = Array.isArray(prev.skills) ? prev.skills : [];
+        const isSameLength = prevSkills.length === updatedSkills.length;
+        const isSameSkills = isSameLength && prevSkills.every((skill, index) => skill === updatedSkills[index]);
+
+        if (isSameSkills) {
+          return prev;
+        }
+
+        const updatedUser = { ...prev, skills: updatedSkills };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        return updatedUser;
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Save skills error:', error);
+      setSkills(previousSkills);
+      setSkillsError(error.message || 'Failed to update skills. Please try again.');
+      return false;
+    } finally {
+      setSkillsSaving(false);
+    }
+  };
 
   // Get first letter of full name
   const getFirstLetter = () => {
@@ -81,15 +189,34 @@ function ProfilePage() {
 
   const { firstName, lastName } = parseName();
 
-  const handleAddSkill = () => {
-    if (newSkill.trim() && !skills.includes(newSkill.trim())) {
-      setSkills([...skills, newSkill.trim()]);
+  const handleAddSkill = async () => {
+    const trimmedSkill = newSkill.trim();
+
+    if (!trimmedSkill || skills.includes(trimmedSkill)) {
+      return;
+    }
+
+    if (skillsSaving || skillsLoading) {
+      return;
+    }
+
+    const previousSkills = skills;
+    const nextSkills = [...skills, trimmedSkill];
+    const success = await saveSkills(nextSkills, previousSkills);
+
+    if (success) {
       setNewSkill('');
     }
   };
 
-  const handleRemoveSkill = (skillToRemove) => {
-    setSkills(skills.filter((skill) => skill !== skillToRemove));
+  const handleRemoveSkill = async (skillToRemove) => {
+    if (skillsSaving || skillsLoading) {
+      return;
+    }
+
+    const previousSkills = skills;
+    const nextSkills = skills.filter((skill) => skill !== skillToRemove);
+    await saveSkills(nextSkills, previousSkills);
   };
 
   if (!user) {
@@ -294,11 +421,39 @@ function ProfilePage() {
           <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
             Skills
           </h3>
-          {skills.length === 0 && (
+          {skillsLoading ? (
+            <p className="text-sm dark:text-gray-400 text-gray-500">
+              Loading skills...
+            </p>
+          ) : skills.length === 0 ? (
             <p className="text-sm dark:text-gray-400 text-gray-500 mb-4">
               No skills added yet. Add your skills below.
             </p>
+          ) : null}
+
+          {(skillsError || skillsMessage) && (
+            <div className="mb-4">
+              {skillsError && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#FEE2E2',
+                  color: '#DC2626',
+                  border: '1px solid #FCA5A5'
+                }}>
+                  {skillsError}
+                </div>
+              )}
+              {skillsMessage && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#D1FAE5',
+                  color: '#065F46',
+                  border: '1px solid #6EE7B7'
+                }}>
+                  {skillsMessage}
+                </div>
+              )}
+            </div>
           )}
+
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
               {skills.map((skill) => (
@@ -319,8 +474,9 @@ function ProfilePage() {
                   <span className="text-sm font-medium">{skill}</span>
                   <button
                     onClick={() => handleRemoveSkill(skill)}
-                    className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    className="hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ color: '#6CA6CD' }}
+                    disabled={skillsSaving || skillsLoading}
                   >
                     <Trash2Icon className="h-3 w-3" />
                   </button>
@@ -339,21 +495,27 @@ function ProfilePage() {
                     handleAddSkill();
                   }
                 }}
-                className="flex-1 px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                disabled={skillsSaving || skillsLoading}
+                className="flex-1 px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
                 type="button"
                 onClick={handleAddSkill}
-                className="px-4 py-2.5 rounded-xl text-white transition-colors flex items-center justify-center"
-                style={{ backgroundColor: '#6CA6CD' }}
+                className="px-4 py-2.5 rounded-xl text-white transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: skillsSaving || skillsLoading ? 'rgba(108, 166, 205, 0.7)' : '#6CA6CD' }}
                 onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+                  if (!skillsSaving && !skillsLoading) {
+                    e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = '#6CA6CD';
+                  if (!skillsSaving && !skillsLoading) {
+                    e.target.style.backgroundColor = '#6CA6CD';
+                  }
                 }}
+                disabled={skillsSaving || skillsLoading}
               >
-                <PlusIcon className="h-4 w-4" />
+                {skillsSaving ? 'Saving...' : <PlusIcon className="h-4 w-4" />}
               </button>
             </div>
           </div>
