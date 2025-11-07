@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSidebar } from './SidebarProvider';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -42,10 +43,91 @@ function FileTextIcon({ className }) {
   );
 }
 
+function UserIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  );
+}
+
+function LogOutIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
+  );
+}
+
+function SettingsIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
 function DashboardNavbar() {
   const { toggleSidebar, isMobile } = useSidebar();
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [userPopupOpen, setUserPopupOpen] = useState(false);
+  const userPopupRef = useRef(null);
+  
+  // Get user data from localStorage
+  const getUserData = () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        return JSON.parse(userStr);
+      }
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+    }
+    return null;
+  };
+
+  const user = getUserData();
+
+  // Get first letter of full name
+  const getFirstLetter = () => {
+    if (!user) return 'U';
+    if (user.fullName) {
+      const trimmedName = user.fullName.trim();
+      return trimmedName[0]?.toUpperCase() || 'U';
+    }
+    if (user.email) {
+      return user.email[0].toUpperCase();
+    }
+    return 'U';
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('isAuthenticated');
+    setUserPopupOpen(false);
+    navigate('/login');
+  };
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userPopupRef.current && !userPopupRef.current.contains(event.target)) {
+        setUserPopupOpen(false);
+      }
+    };
+
+    if (userPopupOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [userPopupOpen]);
 
   return (
     <nav
@@ -103,15 +185,113 @@ function DashboardNavbar() {
             </button>
           </div>
 
-          {/* Profile Avatar */}
-          <div
-            className="h-10 w-10 rounded-full border-2 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity dark:border-[rgba(108,166,205,0.3)]"
-            style={{
-              borderColor: 'rgba(108, 166, 205, 0.2)',
-              background: 'linear-gradient(to bottom right, #6CA6CD, #B2A5FF)'
-            }}
-          >
-            <span className="text-white text-sm font-medium">JD</span>
+          {/* Profile Avatar with Popup */}
+          <div className="relative" ref={userPopupRef}>
+            <button
+              onClick={() => setUserPopupOpen(!userPopupOpen)}
+              className="h-10 w-10 rounded-full border-2 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity dark:border-[rgba(108,166,205,0.3)] focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+              style={{
+                borderColor: 'rgba(108, 166, 205, 0.2)',
+                background: user?.profilePicture 
+                  ? `url(${user.profilePicture})` 
+                  : 'linear-gradient(to bottom right, #6CA6CD, #B2A5FF)',
+                backgroundSize: user?.profilePicture ? 'cover' : 'auto',
+                backgroundPosition: 'center'
+              }}
+            >
+              {!user?.profilePicture && (
+                <span className="text-white text-sm font-medium">{getFirstLetter()}</span>
+              )}
+            </button>
+
+            {/* User Popup */}
+            {userPopupOpen && (
+              <div
+                className="absolute right-0 mt-2 w-72 rounded-xl shadow-lg border z-50 dark:bg-[#1A1F2E] bg-white dark:border-[rgba(108,166,205,0.25)] border-[rgba(108,166,205,0.15)] overflow-hidden"
+                style={{
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                }}
+              >
+                {/* User Info Section */}
+                <div className="p-4 border-b dark:border-[rgba(108,166,205,0.25)] border-[rgba(108,166,205,0.15)]">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="h-12 w-12 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                      style={{
+                        borderColor: 'rgba(108, 166, 205, 0.2)',
+                        background: user?.profilePicture 
+                          ? `url(${user.profilePicture})` 
+                          : 'linear-gradient(to bottom right, #6CA6CD, #B2A5FF)',
+                        backgroundSize: user?.profilePicture ? 'cover' : 'auto',
+                        backgroundPosition: 'center'
+                      }}
+                    >
+                      {!user?.profilePicture && (
+                        <span className="text-white text-base font-medium">{getFirstLetter()}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate dark:text-gray-100 text-gray-900">
+                        {user?.fullName || user?.email || 'User'}
+                      </p>
+                      {user?.email && (
+                        <p className="text-xs truncate dark:text-gray-400 text-gray-500 mt-0.5">
+                          {user.email}
+                        </p>
+                      )}
+                      {user?.authProvider && (
+                        <p className="text-xs mt-1">
+                          <span 
+                            className="px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{
+                              backgroundColor: 'rgba(108, 166, 205, 0.1)',
+                              color: '#6CA6CD'
+                            }}
+                          >
+                            {user.authProvider === 'google' ? 'Google Account' : 'Email Account'}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Menu Items */}
+                <div className="p-2">
+                  <button
+                    onClick={() => {
+                      setUserPopupOpen(false);
+                      navigate('/profile');
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
+                  >
+                    <UserIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
+                    <span>View Profile</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUserPopupOpen(false);
+                      navigate('/settings');
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
+                  >
+                    <SettingsIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
+                    <span>Settings</span>
+                  </button>
+                </div>
+
+                {/* Logout Button */}
+                <div className="p-2 border-t dark:border-[rgba(108,166,205,0.25)] border-[rgba(108,166,205,0.15)]">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  >
+                    <LogOutIcon className="h-4 w-4" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

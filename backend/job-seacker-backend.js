@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const { findUserByEmail, addUser } = require('./utils/userStorage');
+const { findUserByEmail, addUser, findUserById, updateUser } = require('./utils/userStorage');
+const { findProfileByUserId, upsertProfile } = require('./utils/profileStorage');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -275,6 +276,193 @@ app.post('/api/login/google', async (req, res) => {
   }
 });
 
+// Change Password endpoint
+app.post('/api/change-password', async (req, res) => {
+  try {
+    const { userId, currentPassword, newPassword } = req.body;
+
+    // Validation
+    if (!userId || !currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID, current password, and new password are required'
+      });
+    }
+
+    // Password validation (minimum 6 characters)
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters long'
+      });
+    }
+
+    // Find user by ID
+    const user = findUserById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Check if user has a password (email/password users only)
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        error: 'This account was created with Google. Password change is not available for Google accounts.'
+      });
+    }
+
+    // Verify current password
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Current password is incorrect'
+      });
+    }
+
+    // Check if new password is different from current password
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be different from current password'
+      });
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update user password
+    const result = updateUser(userId, { password: hashedPassword });
+
+    if (result.success) {
+      // Remove password from response
+      const { password: _, ...userWithoutPassword } = result.user;
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Password updated successfully',
+        user: userWithoutPassword
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to update password'
+      });
+    }
+  } catch (error) {
+    console.error('Change password error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Get profile preferences endpoint
+app.get('/api/profile/preferences/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const profile = findProfileByUserId(userId);
+
+    const defaultPreferences = {
+      emailNotifications: true,
+      jobRecommendations: true,
+      applicationUpdates: true,
+      marketingEmails: false
+    };
+
+    if (!profile || !profile.preferences) {
+      return res.status(200).json({
+        success: true,
+        preferences: defaultPreferences,
+        isDefault: true
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      preferences: {
+        ...defaultPreferences,
+        ...profile.preferences
+      },
+      isDefault: false
+    });
+  } catch (error) {
+    console.error('Get profile preferences error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Update profile preferences endpoint
+app.post('/api/profile/preferences', (req, res) => {
+  try {
+    const { userId, preferences } = req.body;
+
+    if (!userId || !preferences) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and preferences are required'
+      });
+    }
+
+    const allowedKeys = ['emailNotifications', 'jobRecommendations', 'applicationUpdates', 'marketingEmails'];
+    const sanitizedPreferences = {};
+
+    allowedKeys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(preferences, key)) {
+        sanitizedPreferences[key] = Boolean(preferences[key]);
+      }
+    });
+
+    const result = upsertProfile(userId, {
+      preferences: sanitizedPreferences
+    });
+
+    if (result.success) {
+      return res.status(200).json({
+        success: true,
+        message: 'Preferences updated successfully',
+        preferences: {
+          emailNotifications: true,
+          jobRecommendations: true,
+          applicationUpdates: true,
+          marketingEmails: false,
+          ...result.profile.preferences
+        }
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to update preferences'
+    });
+  } catch (error) {
+    console.error('Update profile preferences error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
 // 404 handler for undefined routes
 app.use((req, res) => {
   res.status(404).json({
@@ -285,7 +473,10 @@ app.use((req, res) => {
       'POST /api/signup',
       'POST /api/signup/google',
       'POST /api/login',
-      'POST /api/login/google'
+      'POST /api/login/google',
+      'POST /api/change-password',
+      'GET /api/profile/preferences/:userId',
+      'POST /api/profile/preferences'
     ]
   });
 });
@@ -299,5 +490,8 @@ app.listen(PORT, () => {
   console.log(`  POST http://localhost:${PORT}/api/signup/google`);
   console.log(`  POST http://localhost:${PORT}/api/login`);
   console.log(`  POST http://localhost:${PORT}/api/login/google`);
+  console.log(`  POST http://localhost:${PORT}/api/change-password`);
+  console.log(`  GET  http://localhost:${PORT}/api/profile/preferences/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/profile/preferences`);
 });
 

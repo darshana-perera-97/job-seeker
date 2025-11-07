@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 
 // SVG Icons
@@ -40,17 +40,131 @@ function Switch({ checked, onChange, disabled = false }) {
   );
 }
 
+const defaultPreferences = {
+  emailNotifications: true,
+  jobRecommendations: true,
+  applicationUpdates: true,
+  marketingEmails: false
+};
+
 function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [jobRecommendations, setJobRecommendations] = useState(true);
-  const [applicationUpdates, setApplicationUpdates] = useState(true);
-  const [marketingEmails, setMarketingEmails] = useState(false);
+  const [user, setUser] = useState(null);
+  const [preferences, setPreferences] = useState(defaultPreferences);
+  const [preferencesLoading, setPreferencesLoading] = useState(true);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [preferencesError, setPreferencesError] = useState('');
+  const [preferencesMessage, setPreferencesMessage] = useState('');
+  
+  // Password change form state
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
-  const handlePasswordUpdate = (e) => {
+  // Get API base URL
+  let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  const API_BASE_URL = apiBaseUrl;
+
+  // Get user data from localStorage
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const userData = JSON.parse(userStr);
+        setUser(userData);
+      }
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+    }
+  }, []);
+
+  const handlePasswordChange = (e) => {
+    const { id, value } = e.target;
+    setPasswordForm(prev => ({
+      ...prev,
+      [id]: value
+    }));
+    // Clear errors when user starts typing
+    if (passwordError) setPasswordError('');
+    if (passwordSuccess) setPasswordSuccess('');
+  };
+
+  const handlePasswordUpdate = async (e) => {
     e.preventDefault();
-    // Handle password update logic here
-    alert('Password updated successfully!');
+    setPasswordError('');
+    setPasswordSuccess('');
+    setPasswordLoading(true);
+
+    // Validation
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordError('All fields are required');
+      setPasswordLoading(false);
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters long');
+      setPasswordLoading(false);
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('New password and confirm password do not match');
+      setPasswordLoading(false);
+      return;
+    }
+
+    if (passwordForm.newPassword === passwordForm.currentPassword) {
+      setPasswordError('New password must be different from current password');
+      setPasswordLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to change password');
+      }
+
+      if (data.success) {
+        setPasswordSuccess('Password updated successfully!');
+        // Update user in localStorage
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setUser(data.user);
+        // Clear form
+        setPasswordForm({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+      } else {
+        setPasswordError(data.error || 'Failed to change password');
+      }
+    } catch (err) {
+      console.error('Password change error:', err);
+      setPasswordError(err.message || 'Failed to change password. Please try again.');
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const handleExportData = () => {
@@ -63,6 +177,90 @@ function SettingsPage() {
       // Handle account deletion logic here
       alert('Account deletion initiated. Please check your email to confirm.');
     }
+  };
+
+  // Fetch preferences when user is available
+  useEffect(() => {
+    const fetchPreferences = async () => {
+      if (!user) {
+        return;
+      }
+
+      setPreferencesLoading(true);
+      setPreferencesError('');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/profile/preferences/${user.id}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load preferences');
+        }
+
+        setPreferences({
+          ...defaultPreferences,
+          ...data.preferences
+        });
+      } catch (error) {
+        console.error('Fetch preferences error:', error);
+        setPreferencesError(error.message || 'Failed to load preferences. Using defaults.');
+        setPreferences(defaultPreferences);
+      } finally {
+        setPreferencesLoading(false);
+      }
+    };
+
+    fetchPreferences();
+  }, [user, API_BASE_URL]);
+
+  const savePreferences = async (updatedPreferences) => {
+    if (!user) return;
+
+    setPreferencesSaving(true);
+    setPreferencesError('');
+    setPreferencesMessage('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/profile/preferences`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          preferences: updatedPreferences
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save preferences');
+      }
+
+      setPreferences({
+        ...defaultPreferences,
+        ...data.preferences
+      });
+      setPreferencesMessage('Preferences saved');
+      setTimeout(() => {
+        setPreferencesMessage('');
+      }, 2000);
+    } catch (error) {
+      console.error('Save preferences error:', error);
+      setPreferencesError(error.message || 'Failed to save preferences. Please try again.');
+    } finally {
+      setPreferencesSaving(false);
+    }
+  };
+
+  const togglePreference = (key) => {
+    const updated = {
+      ...preferences,
+      [key]: !preferences[key]
+    };
+    setPreferences(updated);
+    savePreferences(updated);
   };
 
   return (
@@ -101,64 +299,109 @@ function SettingsPage() {
         </div>
       </div>
 
-      {/* Security */}
-      <div 
-        className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
-      >
-        <div className="p-6 sm:p-8">
-          <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
-            Security
-          </h3>
-          <form onSubmit={handlePasswordUpdate} className="space-y-5">
-            <div className="space-y-2">
-              <label htmlFor="currentPassword" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                Current Password
-              </label>
-              <input
-                id="currentPassword"
-                type="password"
-                placeholder="••••••••"
-                className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="newPassword" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                New Password
-              </label>
-              <input
-                id="newPassword"
-                type="password"
-                placeholder="••••••••"
-                className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                Confirm New Password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
-              style={{ backgroundColor: '#6CA6CD' }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#6CA6CD';
-              }}
-            >
-              Update Password
-            </button>
-          </form>
+      {/* Security - Only show for email-based users */}
+      {user && user.authProvider === 'email' && (
+        <div 
+          className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
+        >
+          <div className="p-6 sm:p-8">
+            <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
+              Security
+            </h3>
+            <form onSubmit={handlePasswordUpdate} className="space-y-5">
+              {/* Error Message */}
+              {passwordError && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#FEE2E2',
+                  color: '#DC2626',
+                  border: '1px solid #FCA5A5'
+                }}>
+                  {passwordError}
+                </div>
+              )}
+
+              {/* Success Message */}
+              {passwordSuccess && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#D1FAE5',
+                  color: '#065F46',
+                  border: '1px solid #6EE7B7'
+                }}>
+                  {passwordSuccess}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="currentPassword" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                  Current Password
+                </label>
+                <input
+                  id="currentPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={passwordForm.currentPassword}
+                  onChange={handlePasswordChange}
+                  required
+                  disabled={passwordLoading}
+                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="newPassword" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                  New Password
+                </label>
+                <input
+                  id="newPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={passwordForm.newPassword}
+                  onChange={handlePasswordChange}
+                  required
+                  disabled={passwordLoading}
+                  minLength={6}
+                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <p className="text-xs dark:text-gray-400 text-gray-500">
+                  Password must be at least 6 characters long
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="confirmPassword" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                  Confirm New Password
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={passwordForm.confirmPassword}
+                  onChange={handlePasswordChange}
+                  required
+                  disabled={passwordLoading}
+                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={passwordLoading}
+                className="px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: passwordLoading ? 'rgba(108, 166, 205, 0.7)' : '#6CA6CD' }}
+                onMouseEnter={(e) => {
+                  if (!passwordLoading) {
+                    e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!passwordLoading) {
+                    e.target.style.backgroundColor = '#6CA6CD';
+                  }
+                }}
+              >
+                {passwordLoading ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Notifications */}
       <div 
@@ -179,8 +422,9 @@ function SettingsPage() {
                 </p>
               </div>
               <Switch 
-                checked={emailNotifications} 
-                onChange={() => setEmailNotifications(!emailNotifications)} 
+                checked={preferences.emailNotifications} 
+                onChange={() => togglePreference('emailNotifications')}
+                disabled={preferencesLoading || preferencesSaving}
               />
             </div>
             <div className="h-px dark:bg-[rgba(108,166,205,0.25)] bg-[rgba(108,166,205,0.15)]" />
@@ -194,8 +438,9 @@ function SettingsPage() {
                 </p>
               </div>
               <Switch 
-                checked={jobRecommendations} 
-                onChange={() => setJobRecommendations(!jobRecommendations)} 
+                checked={preferences.jobRecommendations} 
+                onChange={() => togglePreference('jobRecommendations')}
+                disabled={preferencesLoading || preferencesSaving}
               />
             </div>
             <div className="h-px dark:bg-[rgba(108,166,205,0.25)] bg-[rgba(108,166,205,0.15)]" />
@@ -209,8 +454,9 @@ function SettingsPage() {
                 </p>
               </div>
               <Switch 
-                checked={applicationUpdates} 
-                onChange={() => setApplicationUpdates(!applicationUpdates)} 
+                checked={preferences.applicationUpdates} 
+                onChange={() => togglePreference('applicationUpdates')}
+                disabled={preferencesLoading || preferencesSaving}
               />
             </div>
             <div className="h-px dark:bg-[rgba(108,166,205,0.25)] bg-[rgba(108,166,205,0.15)]" />
@@ -224,11 +470,34 @@ function SettingsPage() {
                 </p>
               </div>
               <Switch 
-                checked={marketingEmails} 
-                onChange={() => setMarketingEmails(!marketingEmails)} 
+                checked={preferences.marketingEmails} 
+                onChange={() => togglePreference('marketingEmails')}
+                disabled={preferencesLoading || preferencesSaving}
               />
             </div>
           </div>
+          {(preferencesError || preferencesMessage) && (
+            <div className="mt-4">
+              {preferencesError && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#FEE2E2',
+                  color: '#DC2626',
+                  border: '1px solid #FCA5A5'
+                }}>
+                  {preferencesError}
+                </div>
+              )}
+              {preferencesMessage && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#D1FAE5',
+                  color: '#065F46',
+                  border: '1px solid #6EE7B7'
+                }}>
+                  {preferencesMessage}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

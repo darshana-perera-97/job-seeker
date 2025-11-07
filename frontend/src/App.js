@@ -13,6 +13,7 @@ import CreateCVPage from './pages/CreateCVPage';
 import MyCVsPage from './pages/MyCVsPage';
 import AboutPage from './pages/AboutPage';
 import DashboardLayout from './layouts/DashboardLayout';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
@@ -25,57 +26,71 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <DashboardLayout>
-                <DashboardPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <DashboardPage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/profile"
             element={
-              <DashboardLayout>
-                <ProfilePage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ProfilePage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/settings"
             element={
-              <DashboardLayout>
-                <SettingsPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <SettingsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/applied-jobs"
             element={
-              <DashboardLayout>
-                <AppliedJobsPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <AppliedJobsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/view-jobs"
             element={
-              <DashboardLayout>
-                <BrowseJobsPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <BrowseJobsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/create-cv"
             element={
-              <DashboardLayout>
-                <CreateCVPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <CreateCVPage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/my-cvs"
             element={
-              <DashboardLayout>
-                <MyCVsPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <MyCVsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
           <Route path="/about" element={<AboutPage />} />

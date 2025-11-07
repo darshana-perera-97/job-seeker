@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 // SVG Icons
@@ -29,15 +29,57 @@ function Trash2Icon({ className }) {
 
 function ProfilePage() {
   const navigate = useNavigate();
-  const [skills, setSkills] = useState([
-    'React',
-    'TypeScript',
-    'Node.js',
-    'CSS',
-    'Git',
-    'Figma',
-  ]);
+  const [user, setUser] = useState(null);
+  const [skills, setSkills] = useState([]);
   const [newSkill, setNewSkill] = useState('');
+
+  // Get user data from localStorage
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const userData = JSON.parse(userStr);
+        setUser(userData);
+        // Load skills from user data if available
+        if (userData.skills && Array.isArray(userData.skills)) {
+          setSkills(userData.skills);
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+    }
+  }, []);
+
+  // Get first letter of full name
+  const getFirstLetter = () => {
+    if (!user) return 'U';
+    if (user.fullName) {
+      const trimmedName = user.fullName.trim();
+      return trimmedName[0]?.toUpperCase() || 'U';
+    }
+    if (user.email) {
+      return user.email[0].toUpperCase();
+    }
+    return 'U';
+  };
+
+  // Parse full name into first and last name
+  const parseName = () => {
+    if (!user?.fullName) return { firstName: '', lastName: '' };
+    const names = user.fullName.trim().split(' ');
+    if (names.length >= 2) {
+      return {
+        firstName: names[0],
+        lastName: names.slice(1).join(' ')
+      };
+    }
+    return {
+      firstName: names[0] || '',
+      lastName: ''
+    };
+  };
+
+  const { firstName, lastName } = parseName();
 
   const handleAddSkill = () => {
     if (newSkill.trim() && !skills.includes(newSkill.trim())) {
@@ -49,6 +91,14 @@ function ProfilePage() {
   const handleRemoveSkill = (skillToRemove) => {
     setSkills(skills.filter((skill) => skill !== skillToRemove));
   };
+
+  if (!user) {
+    return (
+      <div className="p-4 sm:p-6 flex items-center justify-center min-h-[400px]">
+        <p className="text-gray-500 dark:text-gray-400">Loading profile...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -63,53 +113,65 @@ function ProfilePage() {
       </div>
 
       {/* Profile Picture */}
-      <div 
-        className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
-      >
-        <div className="p-6 sm:p-8">
-          <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
-            Profile Picture
-          </h3>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
-            <div className="relative">
-              <div
-                className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-4 flex items-center justify-center text-white text-xl sm:text-2xl font-semibold"
-                style={{
-                  borderColor: 'rgba(108, 166, 205, 0.2)',
-                  background: 'linear-gradient(to bottom right, #6CA6CD, #B2A5FF)'
-                }}
-              >
-                JD
+      {(user.profilePicture || user.fullName || user.email) && (
+        <div 
+          className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
+        >
+          <div className="p-6 sm:p-8">
+            <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
+              Profile Picture
+            </h3>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+              <div className="relative">
+                <div
+                  className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-4 flex items-center justify-center text-white text-xl sm:text-2xl font-semibold"
+                  style={{
+                    borderColor: 'rgba(108, 166, 205, 0.2)',
+                    background: user.profilePicture 
+                      ? `url(${user.profilePicture})` 
+                      : 'linear-gradient(to bottom right, #6CA6CD, #B2A5FF)',
+                    backgroundSize: user.profilePicture ? 'cover' : 'auto',
+                    backgroundPosition: 'center'
+                  }}
+                >
+                  {!user.profilePicture && (
+                    <span>{getFirstLetter()}</span>
+                  )}
+                </div>
+                <button
+                  className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors"
+                  style={{ backgroundColor: '#6CA6CD' }}
+                  onMouseEnter={(e) => {
+                    e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = '#6CA6CD';
+                  }}
+                >
+                  <CameraIcon className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors"
-                style={{ backgroundColor: '#6CA6CD' }}
-                onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = '#6CA6CD';
-                }}
-              >
-                <CameraIcon className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1">
-              <h4 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">
-                John Doe
-              </h4>
-              <p className="text-sm sm:text-base dark:text-gray-400 text-gray-500 mb-3">
-                john.doe@example.com
-              </p>
-              <button
-                className="px-4 py-2 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
-              >
-                Change Photo
-              </button>
+              <div className="flex-1">
+                {user.fullName && (
+                  <h4 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">
+                    {user.fullName}
+                  </h4>
+                )}
+                {user.email && (
+                  <p className="text-sm sm:text-base dark:text-gray-400 text-gray-500 mb-3">
+                    {user.email}
+                  </p>
+                )}
+                <button
+                  className="px-4 py-2 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
+                >
+                  Change Photo
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Personal Information */}
       <div 
@@ -121,72 +183,104 @@ function ProfilePage() {
           </h3>
           <form className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="space-y-2">
-                <label htmlFor="firstName" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                  First Name
-                </label>
-                <input
-                  id="firstName"
-                  type="text"
-                  defaultValue="John"
-                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="lastName" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                  Last Name
-                </label>
-                <input
-                  id="lastName"
-                  type="text"
-                  defaultValue="Doe"
-                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  defaultValue="john.doe@example.com"
-                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="phone" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                  Phone
-                </label>
-                <input
-                  id="phone"
-                  type="tel"
-                  defaultValue="+1 234 567 8900"
-                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label htmlFor="location" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                  Location
-                </label>
-                <input
-                  id="location"
-                  type="text"
-                  defaultValue="New York, NY"
-                  className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label htmlFor="bio" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                  Professional Bio
-                </label>
-                <textarea
-                  id="bio"
-                  placeholder="Tell us about yourself..."
-                  className="w-full px-4 py-2.5 rounded-xl border min-h-32 transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 resize-none"
-                  defaultValue="Experienced frontend developer with a passion for creating beautiful and functional web applications."
-                />
-              </div>
+              {firstName && (
+                <div className="space-y-2">
+                  <label htmlFor="firstName" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    First Name
+                  </label>
+                  <input
+                    id="firstName"
+                    type="text"
+                    defaultValue={firstName}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {lastName && (
+                <div className="space-y-2">
+                  <label htmlFor="lastName" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Last Name
+                  </label>
+                  <input
+                    id="lastName"
+                    type="text"
+                    defaultValue={lastName}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {user.email && (
+                <div className="space-y-2">
+                  <label htmlFor="email" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    defaultValue={user.email}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {user.phone && (
+                <div className="space-y-2">
+                  <label htmlFor="phone" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Phone
+                  </label>
+                  <input
+                    id="phone"
+                    type="tel"
+                    defaultValue={user.phone}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {user.location && (
+                <div className="space-y-2 md:col-span-2">
+                  <label htmlFor="location" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Location
+                  </label>
+                  <input
+                    id="location"
+                    type="text"
+                    defaultValue={user.location}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {user.bio && (
+                <div className="space-y-2 md:col-span-2">
+                  <label htmlFor="bio" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Professional Bio
+                  </label>
+                  <textarea
+                    id="bio"
+                    placeholder="Tell us about yourself..."
+                    defaultValue={user.bio}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border min-h-32 transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 resize-none"
+                  />
+                </div>
+              )}
+              {user.authProvider && (
+                <div className="space-y-2 md:col-span-2">
+                  <label htmlFor="authProvider" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Account Type
+                  </label>
+                  <input
+                    id="authProvider"
+                    type="text"
+                    defaultValue={user.authProvider === 'google' ? 'Google Account' : 'Email Account'}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -200,6 +294,11 @@ function ProfilePage() {
           <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
             Skills
           </h3>
+          {skills.length === 0 && (
+            <p className="text-sm dark:text-gray-400 text-gray-500 mb-4">
+              No skills added yet. Add your skills below.
+            </p>
+          )}
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
               {skills.map((skill) => (
@@ -262,50 +361,61 @@ function ProfilePage() {
       </div>
 
       {/* Portfolio Links */}
-      <div 
-        className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
-      >
-        <div className="p-6 sm:p-8">
-          <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
-            Portfolio & Social Links
-          </h3>
-          <div className="space-y-5">
-            <div className="space-y-2">
-              <label htmlFor="portfolio" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                Portfolio Website
-              </label>
-              <input
-                id="portfolio"
-                type="url"
-                placeholder="https://yourportfolio.com"
-                className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="linkedin" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                LinkedIn
-              </label>
-              <input
-                id="linkedin"
-                type="url"
-                placeholder="https://linkedin.com/in/yourprofile"
-                className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="github" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                GitHub
-              </label>
-              <input
-                id="github"
-                type="url"
-                placeholder="https://github.com/yourusername"
-                className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-              />
+      {(user.portfolio || user.linkedin || user.github) && (
+        <div 
+          className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
+        >
+          <div className="p-6 sm:p-8">
+            <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
+              Portfolio & Social Links
+            </h3>
+            <div className="space-y-5">
+              {user.portfolio && (
+                <div className="space-y-2">
+                  <label htmlFor="portfolio" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Portfolio Website
+                  </label>
+                  <input
+                    id="portfolio"
+                    type="url"
+                    defaultValue={user.portfolio}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {user.linkedin && (
+                <div className="space-y-2">
+                  <label htmlFor="linkedin" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    LinkedIn
+                  </label>
+                  <input
+                    id="linkedin"
+                    type="url"
+                    defaultValue={user.linkedin}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
+              {user.github && (
+                <div className="space-y-2">
+                  <label htmlFor="github" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    GitHub
+                  </label>
+                  <input
+                    id="github"
+                    type="url"
+                    defaultValue={user.github}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Save Button */}
       <div className="flex flex-col sm:flex-row justify-end gap-4">
