@@ -40,7 +40,7 @@ export function MinimalistClean({ data }) {
   const cvData = { ...defaultData, ...data };
 
   return (
-    <div className="bg-white p-12" style={{ width: '794px', height: '1123px', minHeight: '1123px' }}>
+    <div className="bg-white p-12 cv-page-a4" style={{ width: '794px', height: '1123px', minHeight: '1123px', pageBreakAfter: 'always', pageBreakInside: 'avoid' }}>
       {/* Header - Ultra Minimal */}
       <div className="text-center mb-12 pb-8 border-b" style={{ borderColor: '#C3CEDA' }}>
         <h1 className="text-4xl mb-3 tracking-tight text-gray-900">{cvData.name}</h1>
@@ -55,14 +55,14 @@ export function MinimalistClean({ data }) {
       </div>
 
       {/* Summary */}
-      <section className="mb-10">
+      <section className="mb-10" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
         <p className="text-gray-700 leading-relaxed text-center max-w-3xl mx-auto">
           {cvData.summary}
         </p>
       </section>
 
       {/* Experience */}
-      <section className="mb-10">
+      <section className="mb-10" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
         <h2 className="text-sm uppercase tracking-widest mb-6 text-center" style={{ color: '#C3CEDA' }}>
           Experience
         </h2>
@@ -88,7 +88,7 @@ export function MinimalistClean({ data }) {
       </section>
 
       {/* Education */}
-      <section className="mb-10">
+      <section className="mb-10" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
         <h2 className="text-sm uppercase tracking-widest mb-6 text-center" style={{ color: '#C3CEDA' }}>
           Education
         </h2>
@@ -106,7 +106,7 @@ export function MinimalistClean({ data }) {
       </section>
 
       {/* Skills */}
-      <section>
+      <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
         <h2 className="text-sm uppercase tracking-widest mb-6 text-center" style={{ color: '#C3CEDA' }}>
           Skills
         </h2>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatsCard from '../components/StatsCard';
+import WelcomePopup from '../components/WelcomePopup';
 import {
   LineChart,
   Line,
@@ -300,6 +301,7 @@ function DashboardPage() {
   const [recentJobs, setRecentJobs] = useState(recentJobsSeed);
   const [recentJobsLoading, setRecentJobsLoading] = useState(true);
   const [recentJobsError, setRecentJobsError] = useState('');
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
 
   useEffect(() => {
     try {
@@ -307,6 +309,20 @@ function DashboardPage() {
       if (userStr) {
         const userData = JSON.parse(userStr);
         setUser(userData);
+        
+        // Check if we should show welcome popup (set during signup)
+        const userId = userData.id;
+        const shouldShowPopup = localStorage.getItem(`showWelcomePopup_${userId}`);
+        const hasSeenWelcomePopup = localStorage.getItem(`hasSeenWelcomePopup_${userId}`);
+        
+        // Show popup if flag is set (new signup) or if user hasn't seen it yet
+        if (shouldShowPopup === 'true' || !hasSeenWelcomePopup) {
+          setShowWelcomePopup(true);
+          // Clear the show flag once we've decided to show it
+          if (shouldShowPopup === 'true') {
+            localStorage.removeItem(`showWelcomePopup_${userId}`);
+          }
+        }
       }
     } catch (error) {
       console.error('Error parsing user data:', error);
@@ -601,7 +617,14 @@ function DashboardPage() {
   const greetingName = user?.fullName ? user.fullName.split(' ')[0] : 'there';
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+    <>
+      {showWelcomePopup && user && (
+        <WelcomePopup
+          user={user}
+          onClose={() => setShowWelcomePopup(false)}
+        />
+      )}
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -868,6 +891,7 @@ function DashboardPage() {
           </div>
         </div>
       </div>
+    </>
   );
 }
 

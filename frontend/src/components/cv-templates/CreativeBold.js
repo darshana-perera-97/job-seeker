@@ -92,7 +92,7 @@ export function CreativeBold({ data }) {
   const cvData = { ...defaultData, ...data };
 
   return (
-    <div className="bg-white flex" style={{ width: '794px', height: '1123px', minHeight: '1123px' }}>
+    <div className="bg-white flex cv-page-a4" style={{ width: '794px', height: '1123px', minHeight: '1123px', pageBreakAfter: 'always', pageBreakInside: 'avoid' }}>
       {/* Left Sidebar - Purple Theme */}
       <div className="w-1/3 bg-gradient-to-b from-[#B2A5FF] to-[#9B8CED] text-white p-8">
         {/* Profile Circle */}
@@ -127,7 +127,7 @@ export function CreativeBold({ data }) {
         </section>
 
         {/* Skills */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-2 mb-4">
             <div className="h-8 w-1 bg-white rounded-full"></div>
             <h3 className="text-lg">Skills</h3>
@@ -153,7 +153,7 @@ export function CreativeBold({ data }) {
         </div>
 
         {/* Summary */}
-        <section className="mb-8">
+        <section className="mb-8" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-3 mb-3">
             <AwardIcon className="h-6 w-6" style={{ color: '#B2A5FF' }} />
             <h2 className="text-xl text-gray-900">About Me</h2>
@@ -162,7 +162,7 @@ export function CreativeBold({ data }) {
         </section>
 
         {/* Experience */}
-        <section className="mb-8">
+        <section className="mb-8" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-3 mb-4">
             <BriefcaseIcon className="h-6 w-6" style={{ color: '#B2A5FF' }} />
             <h2 className="text-xl text-gray-900">Experience</h2>
@@ -192,7 +192,7 @@ export function CreativeBold({ data }) {
         </section>
 
         {/* Education */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-3 mb-4">
             <GraduationCapIcon className="h-6 w-6" style={{ color: '#B2A5FF' }} />
             <h2 className="text-xl text-gray-900">Education</h2>

@@ -111,6 +111,11 @@ function SignupPage() {
         localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('isAuthenticated', 'true');
         
+        // Set flag to show welcome popup for new signups (only if not existing user)
+        if (data.user?.id && !data.isExisting) {
+          localStorage.setItem(`showWelcomePopup_${data.user.id}`, 'true');
+        }
+        
         // Navigate to dashboard
         navigate('/dashboard');
       } else {
@@ -314,6 +319,11 @@ function SignupPage() {
         // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('isAuthenticated', 'true');
+        
+        // Set flag to show welcome popup for new signups
+        if (data.user?.id) {
+          localStorage.setItem(`showWelcomePopup_${data.user.id}`, 'true');
+        }
         
         // Navigate to dashboard
         navigate('/dashboard');

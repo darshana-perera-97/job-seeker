@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 // SVG Icons
@@ -43,88 +43,114 @@ function BriefcaseIcon({ className }) {
   );
 }
 
-const jobs = [
-  {
-    id: 1,
-    title: 'Senior Frontend Developer',
-    company: 'Tech Corp',
-    location: 'New York, NY',
-    type: 'Full-time',
-    skills: ['React', 'TypeScript', 'CSS'],
-    matchPercentage: 95,
-    postedDate: '2 days ago',
-    salary: '$120k - $150k',
-  },
-  {
-    id: 2,
-    title: 'Full Stack Engineer',
-    company: 'StartupXYZ',
-    location: 'San Francisco, CA',
-    type: 'Full-time',
-    skills: ['React', 'Node.js', 'MongoDB'],
-    matchPercentage: 87,
-    postedDate: '1 week ago',
-    salary: '$100k - $140k',
-  },
-  {
-    id: 3,
-    title: 'UI/UX Developer',
-    company: 'Design Studio',
-    location: 'Remote',
-    type: 'Contract',
-    skills: ['Figma', 'React', 'Tailwind'],
-    matchPercentage: 82,
-    postedDate: '3 days ago',
-    salary: '$80k - $110k',
-  },
-  {
-    id: 4,
-    title: 'React Native Developer',
-    company: 'Mobile First Inc',
-    location: 'Austin, TX',
-    type: 'Full-time',
-    skills: ['React Native', 'TypeScript', 'Firebase'],
-    matchPercentage: 78,
-    postedDate: '5 days ago',
-    salary: '$90k - $130k',
-  },
-  {
-    id: 5,
-    title: 'Lead Frontend Architect',
-    company: 'Enterprise Solutions',
-    location: 'Boston, MA',
-    type: 'Full-time',
-    skills: ['React', 'Architecture', 'Leadership'],
-    matchPercentage: 91,
-    postedDate: '1 day ago',
-    salary: '$140k - $180k',
-  },
-  {
-    id: 6,
-    title: 'Frontend Developer',
-    company: 'FinTech Startup',
-    location: 'Chicago, IL',
-    type: 'Full-time',
-    skills: ['Vue.js', 'JavaScript', 'CSS'],
-    matchPercentage: 72,
-    postedDate: '1 week ago',
-    salary: '$85k - $115k',
-  },
-];
+let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+const API_BASE_URL = apiBaseUrl;
 
 function BrowseJobsPage() {
   const navigate = useNavigate();
   const [jobType, setJobType] = useState('all');
   const [experience, setExperience] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/jobs`);
+        const data = await res.json();
+
+        if (data.success) {
+          setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+        } else {
+          setError(data.error || 'Failed to load jobs');
+        }
+      } catch (err) {
+        console.error('Error loading jobs:', err);
+        setError('Failed to load jobs. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchJobs();
+  }, []);
+
+  const normalizeString = (value) => (value || '').toLowerCase();
+
+  const formatUpdatedAt = (isoDate) => {
+    if (!isoDate) return 'Updated recently';
+    const date = new Date(isoDate);
+    if (Number.isNaN(date.getTime())) return 'Updated recently';
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+    if (diffHours < 1) return 'Updated just now';
+    if (diffHours < 24) return `Updated ${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+    if (diffDays < 7) return `Updated ${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+
+    return `Updated on ${date.toLocaleDateString()}`;
+  };
+
+  const filteredJobs = useMemo(() => {
+    const query = normalizeString(searchQuery);
+    return jobs.filter((job) => {
+      const title = normalizeString(job.title);
+      const company = normalizeString(job.company);
+      const country = normalizeString(job.country);
+      const description = normalizeString(job.jobDescription);
+      const requirements = Array.isArray(job.requirements)
+        ? normalizeString(job.requirements.join(' '))
+        : '';
+
+      const matchesQuery =
+        !query ||
+        title.includes(query) ||
+        company.includes(query) ||
+        country.includes(query) ||
+        description.includes(query) ||
+        requirements.includes(query);
+
+      const matchesType =
+        jobType === 'all' ||
+        normalizeString(job.jobType) === normalizeString(jobType) ||
+        (jobType === 'remote' && normalizeString(job.jobType).includes('remote'));
+
+      const matchesExperience =
+        experience === 'all' ||
+        normalizeString(job.experienceLevel).includes(normalizeString(experience));
+
+      return matchesQuery && matchesType && matchesExperience;
+    });
+  }, [jobs, jobType, experience, searchQuery]);
 
   const handleApplyNow = (jobId) => {
+    const job = jobs.find((item) => item.id === jobId);
+    if (job?.siteLink) {
+      window.open(job.siteLink, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (job?.contactEmail) {
+      window.location.href = `mailto:${job.contactEmail}`;
+      return;
+    }
     navigate('/create-cv');
   };
 
   const handleViewDetails = (jobId) => {
-    // Handle view details logic here
-    console.log('Viewing details for job:', jobId);
+    const job = jobs.find((item) => item.id === jobId);
+    if (job?.siteLink) {
+      window.open(job.siteLink, '_blank', 'noopener,noreferrer');
+    } else if (job?.contactEmail) {
+      window.location.href = `mailto:${job.contactEmail}`;
+    }
   };
 
   return (
@@ -186,63 +212,77 @@ function BrowseJobsPage() {
 
       {/* Job Listings */}
       <div className="space-y-4">
-        {jobs.map((job) => (
+        {loading && (
+          <div className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)] p-6 text-center">
+            <p className="text-sm sm:text-base dark:text-gray-300 text-gray-600">Loading jobs...</p>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="rounded-xl shadow-sm dark:bg-red-900/40 bg-red-50 border border-red-200 p-6 text-center">
+            <p className="text-sm sm:text-base text-red-700 dark:text-red-200">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && filteredJobs.length === 0 && (
+          <div className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)] p-6 text-center">
+            <h3 className="text-lg font-semibold mb-2 dark:text-gray-200 text-gray-900">No jobs found</h3>
+            <p className="text-sm dark:text-gray-400 text-gray-500">
+              Try adjusting your filters or search terms to find more opportunities.
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && filteredJobs.map((job) => (
           <div
             key={job.id}
             className="rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer group dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
           >
             <div className="p-4 sm:p-6">
-              <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-                <div className="flex-1 space-y-3">
+              <div className="flex flex-col lg:flex-row lg:items-start gap-6">
+                <div className="flex-1 space-y-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h3 className="text-lg font-semibold mb-1 group-hover:text-[#6CA6CD] transition-colors dark:text-gray-200 text-gray-900">
                         {job.title}
                       </h3>
                       <p className="text-sm dark:text-gray-400 text-gray-500">
-                        {job.company}
+                        {job.company} • {job.country}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <div className="flex items-center gap-2 justify-end mb-1">
-                        <div className="h-2 w-16 dark:bg-gray-700 bg-gray-300 rounded-full overflow-hidden">
-                          <div
-                            className="h-full"
-                            style={{
-                              width: `${job.matchPercentage}%`,
-                              background: 'linear-gradient(to right, #6CA6CD, #B2A5FF)'
-                            }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium" style={{ color: '#6CA6CD' }}>
-                          {job.matchPercentage}% Match
-                        </span>
-                      </div>
-                    </div>
+                    <span className="text-sm font-medium dark:text-gray-300 text-gray-600">
+                      {formatUpdatedAt(job.updatedAt)}
+                    </span>
                   </div>
 
-                  <div className="flex flex-wrap gap-4 text-sm dark:text-gray-400 text-gray-500">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm dark:text-gray-400 text-gray-500">
                     <span className="flex items-center gap-1">
                       <MapPinIcon className="h-4 w-4" />
-                      {job.location}
+                      {job.country}
                     </span>
                     <span className="flex items-center gap-1">
                       <BriefcaseIcon className="h-4 w-4" />
-                      {job.type}
+                      {job.jobType || 'N/A'}
                     </span>
                     <span className="flex items-center gap-1">
                       <ClockIcon className="h-4 w-4" />
-                      {job.postedDate}
+                      {job.experienceLevel || 'Experience not specified'}
                     </span>
                     <span className="font-medium dark:text-gray-200 text-gray-900">
-                      {job.salary}
+                      {job.salaryRange || 'Salary not disclosed'}
                     </span>
                   </div>
 
+                  {job.jobDescription && (
+                    <p className="text-sm leading-relaxed dark:text-gray-300 text-gray-600">
+                      {job.jobDescription}
+                    </p>
+                  )}
+
                   <div className="flex flex-wrap gap-2">
-                    {job.skills.map((skill) => (
+                    {(job.requirements || []).map((requirement) => (
                       <span
-                        key={skill}
+                        key={requirement}
                         className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
                         style={{
                           backgroundColor: 'rgba(108, 166, 205, 0.1)',
@@ -255,7 +295,7 @@ function BrowseJobsPage() {
                           e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.1)';
                         }}
                       >
-                        {skill}
+                        {requirement}
                       </span>
                     ))}
                   </div>
@@ -275,12 +315,22 @@ function BrowseJobsPage() {
                   >
                     Apply Now
                   </button>
-                  <button
-                    onClick={() => handleViewDetails(job.id)}
-                    className="flex-1 lg:flex-initial px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
-                  >
-                    View Details
-                  </button>
+                  {job.siteLink && (
+                    <button
+                      onClick={() => handleViewDetails(job.id)}
+                      className="flex-1 lg:flex-initial px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
+                    >
+                      View Listing
+                    </button>
+                  )}
+                  {job.contactEmail && (
+                    <button
+                      onClick={() => window.location.href = `mailto:${job.contactEmail}`}
+                      className="flex-1 lg:flex-initial px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
+                    >
+                      Email Recruiter
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -288,36 +338,37 @@ function BrowseJobsPage() {
         ))}
       </div>
 
-      {/* Pagination */}
-      <div className="flex justify-center gap-2">
-        <button
-          disabled
-          className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-400 text-gray-500 opacity-50 cursor-not-allowed"
-        >
-          Previous
-        </button>
-        <button
-          className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-          style={{ backgroundColor: '#6CA6CD' }}
-          onMouseEnter={(e) => {
-            e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#6CA6CD';
-          }}
-        >
-          1
-        </button>
-        <button className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]">
-          2
-        </button>
-        <button className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]">
-          3
-        </button>
-        <button className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]">
-          Next
-        </button>
-      </div>
+      {!loading && !error && filteredJobs.length > 0 && (
+        <div className="flex justify-center gap-2">
+          <button
+            disabled
+            className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-400 text-gray-500 opacity-50 cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <button
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+            style={{ backgroundColor: '#6CA6CD' }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#6CA6CD';
+            }}
+          >
+            1
+          </button>
+          <button className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]">
+            2
+          </button>
+          <button className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]">
+            3
+          </button>
+          <button className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]">
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

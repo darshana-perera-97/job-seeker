@@ -75,7 +75,7 @@ export function ExecutiveElite({ data }) {
   const cvData = { ...defaultData, ...data };
 
   return (
-    <div className="bg-gradient-to-br from-gray-50 to-white" style={{ width: '794px', height: '1123px', minHeight: '1123px' }}>
+    <div className="bg-gradient-to-br from-gray-50 to-white cv-page-a4" style={{ width: '794px', height: '1123px', minHeight: '1123px', pageBreakAfter: 'always', pageBreakInside: 'avoid' }}>
       {/* Elegant Header with Gold Accent */}
       <div className="relative bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 text-white p-10">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-400"></div>
@@ -91,38 +91,46 @@ export function ExecutiveElite({ data }) {
       {/* Contact Bar */}
       <div className="bg-white border-b-2 border-gray-200">
         <div className="max-w-4xl mx-auto px-10 py-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
-                <MailIcon className="h-4 w-4 text-white" />
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            {cvData.email && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+                  <MailIcon className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-gray-700">{cvData.email}</span>
               </div>
-              <span className="text-gray-700">{cvData.email}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
-                <PhoneIcon className="h-4 w-4 text-white" />
+            )}
+            {cvData.phone && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+                  <PhoneIcon className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-gray-700">{cvData.phone}</span>
               </div>
-              <span className="text-gray-700">{cvData.phone}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
-                <MapPinIcon className="h-4 w-4 text-white" />
+            )}
+            {cvData.location && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+                  <MapPinIcon className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-gray-700">{cvData.location}</span>
               </div>
-              <span className="text-gray-700">{cvData.location}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
-                <LinkedinIcon className="h-4 w-4 text-white" />
+            )}
+            {cvData.linkedin && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+                  <LinkedinIcon className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-gray-700 truncate">{cvData.linkedin}</span>
               </div>
-              <span className="text-gray-700 truncate">{cvData.linkedin}</span>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-10 py-8 space-y-8">
         {/* Executive Summary */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-4 mb-4">
             <div className="flex-shrink-0 w-2 h-8 bg-gradient-to-b from-amber-400 to-yellow-500 rounded-full"></div>
             <h2 className="text-2xl text-gray-900 tracking-wide">Executive Summary</h2>
@@ -135,7 +143,7 @@ export function ExecutiveElite({ data }) {
         </section>
 
         {/* Professional Experience */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-4 mb-5">
             <div className="flex-shrink-0 w-2 h-8 bg-gradient-to-b from-amber-400 to-yellow-500 rounded-full"></div>
             <h2 className="text-2xl text-gray-900 tracking-wide">Professional Experience</h2>
@@ -169,7 +177,7 @@ export function ExecutiveElite({ data }) {
         </section>
 
         {/* Education */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-4 mb-5">
             <div className="flex-shrink-0 w-2 h-8 bg-gradient-to-b from-amber-400 to-yellow-500 rounded-full"></div>
             <h2 className="text-2xl text-gray-900 tracking-wide">Education</h2>
@@ -193,7 +201,7 @@ export function ExecutiveElite({ data }) {
         </section>
 
         {/* Core Competencies */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <div className="flex items-center gap-4 mb-5">
             <div className="flex-shrink-0 w-2 h-8 bg-gradient-to-b from-amber-400 to-yellow-500 rounded-full"></div>
             <h2 className="text-2xl text-gray-900 tracking-wide">Core Competencies</h2>

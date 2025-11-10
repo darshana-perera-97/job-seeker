@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createRoot } from 'react-dom/client';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import Stepper from '../components/Stepper';
 import { ModernProfessional } from '../components/cv-templates/ModernProfessional';
 import { CreativeBold } from '../components/cv-templates/CreativeBold';
 import { MinimalistClean } from '../components/cv-templates/MinimalistClean';
 import { ExecutiveElite } from '../components/cv-templates/ExecutiveElite';
+import templateImage1 from '../assets/CV-template-01.jpg';
+import templateImage2 from '../assets/CV-template-02.jpg';
+import templateImage3 from '../assets/CV-template-03.jpg';
+import templateImage4 from '../assets/CV-template-04.jpg';
 
 // SVG Icons
 function DownloadIcon({ className }) {
@@ -45,22 +52,40 @@ function CheckIcon({ className }) {
 
 const steps = [
   { id: 1, title: 'Select Template', description: 'Choose a design' },
-  { id: 2, title: 'Job Details', description: 'Add job info' },
+  { id: 2, title: 'Personal Details', description: 'Add your information' },
   { id: 3, title: 'CV Content', description: 'Edit CV details' },
   { id: 4, title: 'Preview & Download', description: 'Review and download' },
 ];
 
 const templates = [
-  { id: 1, name: 'Modern Professional', component: ModernProfessional, description: 'Clean design with blue accents' },
-  { id: 2, name: 'Creative Bold', component: CreativeBold, description: 'Vibrant purple sidebar layout' },
-  { id: 3, name: 'Minimalist Clean', component: MinimalistClean, description: 'Ultra-minimal centered design' },
-  { id: 4, name: 'Executive Elite', component: ExecutiveElite, description: 'Premium dark theme with gold' },
+  { id: 1, name: 'Modern Professional', component: ModernProfessional, description: 'Clean design with blue accents', image: templateImage1 },
+  { id: 2, name: 'Creative Bold', component: CreativeBold, description: 'Vibrant purple sidebar layout', image: templateImage2 },
+  { id: 3, name: 'Minimalist Clean', component: MinimalistClean, description: 'Ultra-minimal centered design', image: templateImage3 },
+  { id: 4, name: 'Executive Elite', component: ExecutiveElite, description: 'Premium dark theme with gold', image: templateImage4 },
 ];
+
+// Get API base URL
+let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+const API_BASE_URL = apiBaseUrl;
 
 function CreateCVPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [personalDetails, setPersonalDetails] = useState({
+    fullName: '',
+    title: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    country: '',
+    postalCode: '',
+    linkedIn: '',
+    website: '',
+    summary: '',
+  });
   const [jobDetails, setJobDetails] = useState({
     position: '',
     company: '',
@@ -69,34 +94,426 @@ function CreateCVPage() {
     jobLink: '',
   });
   const [cvContent, setCvContent] = useState({
-    professionalSummary: 'Experienced frontend developer with 5+ years of expertise in React, TypeScript, and modern web technologies. Proven track record of delivering high-quality, scalable applications.',
-    experience: [
-      {
-        title: 'Senior Developer',
-        company: 'Tech Corp',
-        period: '2020 - Present',
-        responsibilities: ['Led development of customer-facing applications', 'Improved application performance by 40%'],
-      },
-    ],
-    education: [
-      {
-        degree: 'B.S. Computer Science',
-        institution: 'University Name',
-        year: '2018',
-      },
-    ],
-    skills: ['React', 'TypeScript', 'Node.js', 'CSS', 'Git'],
+    professionalSummary: '',
+    experience: [],
+    education: [],
+    skills: [],
   });
+  const [createdCVsCount, setCreatedCVsCount] = useState(0);
+  const [createdLimitReached, setCreatedLimitReached] = useState(false);
+  const [loadingCreatedLimit, setLoadingCreatedLimit] = useState(true);
 
-  const handleNext = () => {
+  // Load created CVs count from backend (limit 3)
+  useEffect(() => {
+    const loadCreatedCVsCount = async () => {
+      try {
+        const userStr = localStorage.getItem('user');
+        if (!userStr) {
+          setCreatedCVsCount(0);
+          setCreatedLimitReached(false);
+          setLoadingCreatedLimit(false);
+          return;
+        }
+
+        const user = JSON.parse(userStr);
+        const res = await fetch(`${API_BASE_URL}/api/cv/user/${user.id}`);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.cvs)) {
+          const createdCount = data.cvs.filter(cv => cv.isCreated).length;
+          setCreatedCVsCount(createdCount);
+          setCreatedLimitReached(createdCount >= 3);
+        } else {
+          setCreatedCVsCount(0);
+          setCreatedLimitReached(false);
+        }
+      } catch (error) {
+        console.error('Error loading created CVs count:', error);
+        setCreatedCVsCount(0);
+        setCreatedLimitReached(false);
+      } finally {
+        setLoadingCreatedLimit(false);
+      }
+    };
+
+    loadCreatedCVsCount();
+  }, []);
+
+  // Load CV data from backend
+  const loadCVData = async () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) return;
+
+      const user = JSON.parse(userStr);
+      const res = await fetch(`${API_BASE_URL}/api/cv-data/${user.id}`);
+      const data = await res.json();
+
+      if (data.success && data.cvData) {
+        if (data.cvData.personalDetails) {
+          setPersonalDetails(data.cvData.personalDetails);
+        }
+        if (data.cvData.cvContent) {
+          // Only load if there's actual data, otherwise keep empty arrays
+          if (data.cvData.cvContent.experience && data.cvData.cvContent.experience.length > 0) {
+            setCvContent(prev => ({
+              ...prev,
+              experience: data.cvData.cvContent.experience,
+            }));
+          }
+          if (data.cvData.cvContent.education && data.cvData.cvContent.education.length > 0) {
+            setCvContent(prev => ({
+              ...prev,
+              education: data.cvData.cvContent.education,
+            }));
+          }
+          if (data.cvData.cvContent.skills && data.cvData.cvContent.skills.length > 0) {
+            setCvContent(prev => ({
+              ...prev,
+              skills: data.cvData.cvContent.skills,
+            }));
+          }
+          if (data.cvData.cvContent.professionalSummary) {
+            setCvContent(prev => ({
+              ...prev,
+              professionalSummary: data.cvData.cvContent.professionalSummary,
+            }));
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading CV data:', error);
+    }
+  };
+
+  // Save CV data to backend (personal details and/or CV content)
+  const saveCVData = async (dataToSave) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        alert('Please log in to save your data.');
+        return false;
+      }
+
+      const user = JSON.parse(userStr);
+      const res = await fetch(`${API_BASE_URL}/api/cv-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          ...dataToSave,
+        }),
+      });
+
+      const data = await res.json();
+      return data.success;
+    } catch (error) {
+      console.error('Error saving CV data:', error);
+      return false;
+    }
+  };
+
+  const handleNext = async () => {
+    if (currentStep === 2) {
+      // Validate required fields
+      if (!personalDetails.fullName.trim()) {
+        alert('Please enter your full name.');
+        return;
+      }
+      if (!personalDetails.email.trim()) {
+        alert('Please enter your email.');
+        return;
+      }
+      if (!personalDetails.summary.trim()) {
+        alert('Please enter your About Me section.');
+        return;
+      }
+
+      // Save personal details before moving to next step
+      const saved = await saveCVData({ personalDetails });
+      if (!saved) {
+        alert('Failed to save personal details. Please try again.');
+        return;
+      }
+    } else if (currentStep === 3) {
+      // Save CV content before moving to next step
+      const saved = await saveCVData({ cvContent });
+      if (!saved) {
+        alert('Failed to save CV content. Please try again.');
+        return;
+      }
+    }
+
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
     }
   };
 
+  // Load CV data when component mounts or step changes
+  useEffect(() => {
+    if (currentStep === 2 || currentStep === 3) {
+      loadCVData();
+    }
+  }, [currentStep]);
+
   const handleBack = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
+    }
+  };
+
+  const handleSaveCV = async () => {
+    // Check if user already has 3 created CVs
+    if (createdLimitReached) {
+      alert('Maximum CV creation limit reached. You can only create 3 CVs. Created CVs cannot be deleted.');
+      return;
+    }
+
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        alert('Please log in to save your CV.');
+        return;
+      }
+
+      const user = JSON.parse(userStr);
+      const template = templates.find(t => t.id === selectedTemplate);
+      
+      if (!template) {
+        alert('Template not found');
+        return;
+      }
+
+      // Get template component
+      const templatesMap = {
+        1: ModernProfessional,
+        2: CreativeBold,
+        3: MinimalistClean,
+        4: ExecutiveElite,
+      };
+      const TemplateComponent = templatesMap[selectedTemplate];
+
+      if (!TemplateComponent) {
+        alert('Template component not found');
+        return;
+      }
+
+      // Prepare template data
+      const templateData = {
+        name: personalDetails.fullName || 'Your Name',
+        title: personalDetails.title || jobDetails.position || 'Your Title',
+        email: personalDetails.email || 'your.email@example.com',
+        phone: personalDetails.phone || '',
+        location: personalDetails.city && personalDetails.country 
+          ? `${personalDetails.city}, ${personalDetails.country}` 
+          : personalDetails.city || personalDetails.country || '',
+        linkedin: personalDetails.linkedIn || '',
+        website: personalDetails.website || '',
+        summary: cvContent.professionalSummary || personalDetails.summary || '',
+        experience: (cvContent.experience || []).map(exp => ({
+          position: exp.title,
+          company: exp.company,
+          period: exp.period,
+          achievements: exp.responsibilities || [],
+        })),
+        education: (cvContent.education || []).map(edu => ({
+          degree: edu.degree,
+          institution: edu.institution,
+          year: edu.year,
+        })),
+        skills: cvContent.skills || [],
+      };
+
+      // Create a temporary container for the CV
+      const tempDiv = document.createElement('div');
+      tempDiv.id = 'cv-save-container';
+      tempDiv.style.position = 'fixed';
+      tempDiv.style.top = '0';
+      tempDiv.style.left = '0';
+      tempDiv.style.width = '794px';
+      tempDiv.style.height = 'auto';
+      tempDiv.style.minHeight = '1123px';
+      tempDiv.style.overflow = 'hidden';
+      tempDiv.style.backgroundColor = 'white';
+      tempDiv.style.zIndex = '99999';
+      tempDiv.style.opacity = '0';
+      tempDiv.style.pointerEvents = 'none';
+      document.body.appendChild(tempDiv);
+
+      // Render the template
+      const root = createRoot(tempDiv);
+      root.render(React.createElement(TemplateComponent, { data: templateData }));
+
+      // Wait for React to render - multiple frames to ensure DOM is ready
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setTimeout(resolve, 1000);
+            });
+          });
+        });
+      });
+
+      // Verify content is rendered
+      const hasRenderedContent = tempDiv.querySelector('*');
+      if (!hasRenderedContent) {
+        throw new Error('CV content failed to render');
+      }
+
+      // Wait for all images to load
+      const images = tempDiv.querySelectorAll('img');
+      if (images.length > 0) {
+        await Promise.all(
+          Array.from(images).map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise((resolve) => {
+              img.onload = resolve;
+              img.onerror = resolve;
+              setTimeout(resolve, 3000);
+            });
+          })
+        );
+      }
+
+      // Additional wait for fonts, styles, and layout
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Force layout recalculation
+      tempDiv.getBoundingClientRect();
+
+      // Make element temporarily visible for html2canvas (but still off-screen)
+      tempDiv.style.opacity = '1';
+      tempDiv.style.visibility = 'visible';
+      
+      // Wait a bit more for visibility to take effect
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Use html2canvas to capture the content
+      const canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        logging: true, // Enable logging for debugging
+        letterRendering: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        width: 794,
+        height: tempDiv.scrollHeight || 1123
+      });
+
+      console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
+      console.log('Element dimensions:', tempDiv.offsetWidth, 'x', tempDiv.offsetHeight);
+      console.log('Element scrollHeight:', tempDiv.scrollHeight);
+
+      // Check if canvas has content (check if there are non-white pixels)
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, Math.min(canvas.width, 100), Math.min(canvas.height, 100));
+      let nonWhitePixels = 0;
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const r = imageData.data[i];
+        const g = imageData.data[i + 1];
+        const b = imageData.data[i + 2];
+        const a = imageData.data[i + 3];
+        // Check if pixel is not white/transparent
+        if (a > 0 && (r < 250 || g < 250 || b < 250)) {
+          nonWhitePixels++;
+        }
+      }
+
+      if (nonWhitePixels === 0) {
+        console.error('Canvas appears to be empty - no content detected');
+        throw new Error('Failed to capture CV content - canvas is empty. Please check browser console for details.');
+      }
+
+      console.log('Non-white pixels found:', nonWhitePixels);
+
+      // Convert canvas to image
+      const imgData = canvas.toDataURL('image/png', 1.0);
+
+      // A4 dimensions in pixels (at 96 DPI)
+      const pdfWidth = 794;
+      const pdfHeight = 1123;
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      // Calculate how many pages we need
+      const imgAspectRatio = imgWidth / imgHeight;
+      const pdfAspectRatio = pdfWidth / pdfHeight;
+      
+      // Scale to fit width
+      const scale = pdfWidth / imgWidth;
+      const scaledHeight = imgHeight * scale;
+      const pagesNeeded = Math.ceil(scaledHeight / pdfHeight);
+
+      // Create PDF
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [pdfWidth, pdfHeight],
+        compress: true
+      });
+
+      // Add image to PDF, splitting across pages if needed
+      let yPosition = 0;
+      for (let page = 0; page < pagesNeeded; page++) {
+        if (page > 0) {
+          pdf.addPage();
+        }
+        
+        const sourceY = (page * pdfHeight) / scale;
+        const sourceHeight = Math.min(pdfHeight / scale, imgHeight - sourceY);
+        const destHeight = sourceHeight * scale;
+        
+        // Create a temporary canvas for this page
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = imgWidth;
+        pageCanvas.height = sourceHeight;
+        const pageCtx = pageCanvas.getContext('2d');
+        pageCtx.drawImage(canvas, 0, sourceY, imgWidth, sourceHeight, 0, 0, imgWidth, sourceHeight);
+        
+        const pageImgData = pageCanvas.toDataURL('image/png', 1.0);
+        pdf.addImage(pageImgData, 'PNG', 0, 0, pdfWidth, destHeight);
+      }
+
+      // Generate PDF blob
+      const pdfBlob = pdf.output('blob');
+      const pdfFile = new File([pdfBlob], `${template.name || 'CV'}.pdf`, { type: 'application/pdf' });
+
+      // Cleanup React render
+      root.unmount();
+      document.body.removeChild(tempDiv);
+
+      // Create FormData to send PDF to backend
+      const formData = new FormData();
+      formData.append('cvFile', pdfFile);
+      formData.append('userId', user.id);
+      formData.append('cvName', template.name || 'Created CV');
+      formData.append('isCreated', 'true'); // Mark as created CV
+
+      // Upload PDF to backend
+      const res = await fetch(`${API_BASE_URL}/api/cv/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        alert('CV saved successfully!');
+        navigate('/my-cvs');
+      } else {
+        alert(data.error || 'Failed to save CV. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error saving CV:', error);
+      alert(`Failed to save CV: ${error.message || 'Unknown error'}`);
+      // Cleanup on error
+      const tempDiv = document.getElementById('cv-save-container');
+      if (tempDiv && document.body.contains(tempDiv)) {
+        document.body.removeChild(tempDiv);
+      }
     }
   };
 
@@ -109,6 +526,44 @@ function CreateCVPage() {
     // Handle send application logic here
     alert('Application sent successfully!');
   };
+
+  if (loadingCreatedLimit) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)] p-6 text-center">
+          <p className="text-sm sm:text-base dark:text-gray-300 text-gray-600">Checking your CV limit...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (createdLimitReached) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)] p-6 text-center space-y-4">
+          <h2 className="text-xl sm:text-2xl font-semibold dark:text-gray-200 text-gray-900">
+            CV Creation Limit Reached
+          </h2>
+          <p className="text-sm sm:text-base dark:text-gray-300 text-gray-600">
+            You have already created the maximum of 3 CVs. Please manage or use your existing CVs in the My CVs page before creating a new one.
+          </p>
+          <button
+            onClick={() => navigate('/my-cvs')}
+            className="px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
+            style={{ backgroundColor: '#6CA6CD' }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#6CA6CD';
+            }}
+          >
+            Go to My CVs
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -134,34 +589,36 @@ function CreateCVPage() {
               <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
                 Choose a Template
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
                 {templates.map((template) => {
                   const TemplateComponent = template.component;
                   return (
                     <button
                       key={template.id}
                       onClick={() => setSelectedTemplate(template.id)}
-                      className={`group relative overflow-hidden rounded-2xl border-2 transition-all ${
+                      className={`group relative overflow-hidden rounded-lg border-2 transition-all ${
                         selectedTemplate === template.id
-                          ? 'border-[#6CA6CD] shadow-lg scale-105 dark:border-[#6CA6CD]'
+                          ? 'border-[#6CA6CD] shadow-md scale-105 dark:border-[#6CA6CD]'
                           : 'dark:border-[rgba(108,166,205,0.25)] border-[rgba(108,166,205,0.15)] hover:border-[#6CA6CD]/50 dark:hover:border-[#6CA6CD]/50'
                       }`}
                     >
-                      <div className="aspect-[794/1123] bg-white overflow-hidden">
-                        <div className="origin-top-left" style={{ transform: 'scale(0.19)', width: '794px', height: '1123px' }}>
-                          <TemplateComponent />
-                        </div>
+                      <div className="aspect-[794/1123] bg-white overflow-hidden w-full relative">
+                        <img 
+                          src={template.image} 
+                          alt={template.name}
+                          className="w-full h-full object-cover object-top"
+                        />
                       </div>
-                      <div className="p-4 dark:bg-[#1A1F2E] bg-white border-t dark:border-[rgba(108,166,205,0.25)] border-[rgba(108,166,205,0.15)]">
-                        <p className="font-medium text-sm mb-1 dark:text-gray-200 text-gray-900">{template.name}</p>
-                        <p className="text-xs dark:text-gray-400 text-gray-500">{template.description}</p>
+                      <div className="p-1.5 sm:p-2 dark:bg-[#1A1F2E] bg-white border-t dark:border-[rgba(108,166,205,0.25)] border-[rgba(108,166,205,0.15)]">
+                        <p className="font-medium text-[10px] sm:text-xs mb-0.5 dark:text-gray-200 text-gray-900 truncate">{template.name}</p>
+                        <p className="text-[9px] sm:text-[10px] dark:text-gray-400 text-gray-500 line-clamp-1">{template.description}</p>
                       </div>
                       {selectedTemplate === template.id && (
                         <div 
-                          className="absolute top-3 right-3 flex h-6 w-6 items-center justify-center rounded-full text-white shadow-lg z-10"
+                          className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full text-white shadow-md z-10"
                           style={{ backgroundColor: '#6CA6CD' }}
                         >
-                          <CheckIcon className="h-4 w-4" />
+                          <CheckIcon className="h-2.5 w-2.5" />
                         </div>
                       )}
                     </button>
@@ -173,7 +630,7 @@ function CreateCVPage() {
         </div>
       )}
 
-      {/* Step 2: Job Details */}
+      {/* Step 2: Personal Details */}
       {currentStep === 2 && (
         <div className="space-y-6">
           <div 
@@ -181,72 +638,161 @@ function CreateCVPage() {
           >
             <div className="p-6 sm:p-8">
               <h3 className="text-lg font-semibold mb-6 dark:text-gray-200 text-gray-900">
-                Job Vacancy Details
+                Personal Details
               </h3>
               <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label htmlFor="fullName" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Full Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="fullName"
+                      type="text"
+                      placeholder="e.g., John Doe"
+                      value={personalDetails.fullName}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, fullName: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="title" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Professional Title
+                    </label>
+                    <input
+                      id="title"
+                      type="text"
+                      placeholder="e.g., Senior Frontend Developer"
+                      value={personalDetails.title}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, title: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="email" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Email <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="email"
+                      type="email"
+                      placeholder="e.g., john.doe@example.com"
+                      value={personalDetails.email}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, email: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label htmlFor="phone" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Phone Number
+                    </label>
+                    <input
+                      id="phone"
+                      type="tel"
+                      placeholder="e.g., +1 234 567 8900"
+                      value={personalDetails.phone}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, phone: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="city" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      City
+                    </label>
+                    <input
+                      id="city"
+                      type="text"
+                      placeholder="e.g., New York"
+                      value={personalDetails.city}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, city: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <label htmlFor="position" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                    Position Title
+                  <label htmlFor="address" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    Address
                   </label>
                   <input
-                    id="position"
+                    id="address"
                     type="text"
-                    placeholder="e.g., Senior Frontend Developer"
-                    value={jobDetails.position}
-                    onChange={(e) => setJobDetails({ ...jobDetails, position: e.target.value })}
+                    placeholder="e.g., 123 Main Street"
+                    value={personalDetails.address}
+                    onChange={(e) => setPersonalDetails({ ...personalDetails, address: e.target.value })}
                     className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label htmlFor="company" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                    Company Name
-                  </label>
-                  <input
-                    id="company"
-                    type="text"
-                    placeholder="e.g., Tech Corp Inc."
-                    value={jobDetails.company}
-                    onChange={(e) => setJobDetails({ ...jobDetails, company: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label htmlFor="country" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Country
+                    </label>
+                    <input
+                      id="country"
+                      type="text"
+                      placeholder="e.g., United States"
+                      value={personalDetails.country}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, country: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="postalCode" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Postal Code
+                    </label>
+                    <input
+                      id="postalCode"
+                      type="text"
+                      placeholder="e.g., 10001"
+                      value={personalDetails.postalCode}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, postalCode: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label htmlFor="linkedIn" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      LinkedIn Profile
+                    </label>
+                    <input
+                      id="linkedIn"
+                      type="url"
+                      placeholder="e.g., https://linkedin.com/in/johndoe"
+                      value={personalDetails.linkedIn}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, linkedIn: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="website" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                      Website/Portfolio
+                    </label>
+                    <input
+                      id="website"
+                      type="url"
+                      placeholder="e.g., https://johndoe.com"
+                      value={personalDetails.website}
+                      onChange={(e) => setPersonalDetails({ ...personalDetails, website: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="requiredSkills" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                    Required Skills
+                  <label htmlFor="summary" className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                    About Me <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    id="requiredSkills"
-                    type="text"
-                    placeholder="React, TypeScript, Node.js"
-                    value={jobDetails.requiredSkills}
-                    onChange={(e) => setJobDetails({ ...jobDetails, requiredSkills: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="experience" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                    Years of Experience
-                  </label>
-                  <input
-                    id="experience"
-                    type="text"
-                    placeholder="e.g., 5+"
-                    value={jobDetails.experience}
-                    onChange={(e) => setJobDetails({ ...jobDetails, experience: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="jobLink" className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                    Job Posting Link (Optional)
-                  </label>
-                  <input
-                    id="jobLink"
-                    type="url"
-                    placeholder="https://example.com/job"
-                    value={jobDetails.jobLink}
-                    onChange={(e) => setJobDetails({ ...jobDetails, jobLink: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
+                  <textarea
+                    id="summary"
+                    rows={4}
+                    placeholder="Write a brief summary about yourself..."
+                    value={personalDetails.summary}
+                    onChange={(e) => setPersonalDetails({ ...personalDetails, summary: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 resize-none"
+                    required
                   />
                 </div>
               </form>
@@ -447,9 +993,10 @@ function CreateCVPage() {
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="space-y-2">
-                          <label className="text-xs font-medium dark:text-gray-300 text-gray-700">Degree</label>
+                          <label className="text-xs font-medium dark:text-gray-300 text-gray-700">Education Level</label>
                           <input
                             type="text"
+                            placeholder="e.g., Bachelor's, Master's, High School"
                             value={edu.degree}
                             onChange={(e) => {
                               const newEdu = [...cvContent.education];
@@ -509,9 +1056,9 @@ function CreateCVPage() {
         </div>
       )}
 
-      {/* Step 4: Preview & Download */}
-      {currentStep === 4 && selectedTemplate && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Step 4: Preview & Download */}
+        {currentStep === 4 && selectedTemplate && (
+          <div className="space-y-4 sm:space-y-6">
           {/* CV Preview */}
           <div 
             className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
@@ -521,37 +1068,98 @@ function CreateCVPage() {
                 <h3 className="text-lg font-semibold dark:text-gray-200 text-gray-900">CV Preview</h3>
                 <FileTextIcon className="h-5 w-5 dark:text-gray-400 text-gray-500" />
               </div>
-              <div className="rounded-xl border overflow-y-auto dark:bg-white bg-white dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] p-4">
+              <div className="rounded-xl border overflow-y-auto dark:bg-white bg-white dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] p-4 sm:p-6">
+                <style>{`
+                  @media print {
+                    .cv-page, .cv-page-a4 {
+                      page-break-after: always;
+                      page-break-inside: avoid;
+                      break-after: page;
+                      break-inside: avoid;
+                    }
+                    .cv-page:last-child, .cv-page-a4:last-child {
+                      page-break-after: auto;
+                      break-after: auto;
+                    }
+                    @page {
+                      size: A4;
+                      margin: 0;
+                    }
+                  }
+                  .cv-page {
+                    width: 794px;
+                    height: 1123px;
+                    min-height: 1123px;
+                    margin: 0 auto 20px;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                    background: white;
+                    position: relative;
+                    page-break-after: always;
+                    page-break-inside: avoid;
+                  }
+                  .cv-page::after {
+                    content: '';
+                    position: absolute;
+                    bottom: -10px;
+                    left: 0;
+                    right: 0;
+                    height: 1px;
+                    background: #e5e7eb;
+                  }
+                  .cv-page-a4 {
+                    page-break-after: always;
+                    page-break-inside: avoid;
+                  }
+                `}</style>
                 <div className="flex justify-center">
-                  <div style={{ transform: 'scale(0.6)', transformOrigin: 'top center' }}>
+                  <div className="cv-preview-container" style={{ transform: 'scale(0.8)', transformOrigin: 'top center', maxWidth: '100%' }}>
                     {(() => {
                       const selectedTemplateData = templates.find(t => t.id === selectedTemplate);
                       const TemplateComponent = selectedTemplateData?.component;
                       if (!TemplateComponent) return null;
                       
+                      // Load personal details and CV content
+                      const userStr = localStorage.getItem('user');
+                      let personalData = {};
+                      if (userStr) {
+                        try {
+                          const user = JSON.parse(userStr);
+                          // Try to get personal details from state or load from backend
+                          personalData = personalDetails;
+                        } catch (e) {}
+                      }
+                      
                       // Transform cvContent to match template data structure
                       const templateData = {
-                        name: 'John Doe',
-                        title: jobDetails.position || 'Senior Frontend Developer',
-                        email: 'john@example.com',
-                        phone: '+1 234 567 8900',
-                        location: 'New York, NY',
-                        summary: cvContent.professionalSummary,
+                        name: personalData.fullName || 'Your Name',
+                        title: personalData.title || jobDetails.position || 'Your Title',
+                        email: personalData.email || 'your.email@example.com',
+                        phone: personalData.phone || '',
+                        location: personalData.city && personalData.country 
+                          ? `${personalData.city}, ${personalData.country}` 
+                          : personalData.city || personalData.country || '',
+                        linkedin: personalData.linkedIn || '',
+                        website: personalData.website || '',
+                        summary: cvContent.professionalSummary || personalData.summary || '',
                         experience: cvContent.experience.map(exp => ({
                           position: exp.title,
                           company: exp.company,
                           period: exp.period,
                           achievements: exp.responsibilities,
                         })),
-                      education: cvContent.education.map(edu => ({
-                        degree: edu.degree,
-                        institution: edu.institution,
-                        year: edu.year,
-                      })),
+                        education: cvContent.education.map(edu => ({
+                          degree: edu.degree,
+                          institution: edu.institution,
+                          year: edu.year,
+                        })),
                         skills: cvContent.skills,
                       };
                       
-                      return <TemplateComponent data={templateData} />;
+                      return (
+                        <div className="cv-page">
+                          <TemplateComponent data={templateData} />
+                        </div>
+                      );
                     })()}
                   </div>
                 </div>
@@ -600,6 +1208,12 @@ John Doe`}
         <div className="flex gap-3">
           {currentStep === 4 ? (
             <>
+              <button
+                onClick={handleSaveCV}
+                className="px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)] flex items-center gap-2"
+              >
+                Save CV
+              </button>
               <button
                 onClick={handleDownloadCV}
                 className="px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)] flex items-center gap-2"

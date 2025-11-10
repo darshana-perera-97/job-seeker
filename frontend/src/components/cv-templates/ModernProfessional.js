@@ -83,8 +83,16 @@ export function ModernProfessional({ data }) {
 
   const cvData = { ...defaultData, ...data };
 
+  const contactItems = [
+    { Icon: MailIcon, value: cvData.email },
+    { Icon: PhoneIcon, value: cvData.phone },
+    { Icon: MapPinIcon, value: cvData.location },
+    { Icon: LinkedinIcon, value: cvData.linkedin },
+    { Icon: GlobeIcon, value: cvData.website },
+  ].filter(item => item.value && String(item.value).trim() !== '');
+
   return (
-    <div className="bg-white" style={{ width: '794px', height: '1123px', minHeight: '1123px' }}>
+    <div className="bg-white cv-page-a4" style={{ width: '794px', height: '1123px', minHeight: '1123px', pageBreakAfter: 'always', pageBreakInside: 'avoid' }}>
       {/* Header with accent bar */}
       <div className="bg-gradient-to-r from-[#6CA6CD] to-[#5090B8] p-8 text-white">
         <h1 className="text-4xl mb-2">{cvData.name}</h1>
@@ -94,40 +102,28 @@ export function ModernProfessional({ data }) {
       {/* Contact Information */}
       <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200 px-8 py-4">
         <div className="flex flex-wrap gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <MailIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
-            <span>{cvData.email}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <PhoneIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
-            <span>{cvData.phone}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <MapPinIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
-            <span>{cvData.location}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <LinkedinIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
-            <span>{cvData.linkedin}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <GlobeIcon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
-            <span>{cvData.website}</span>
-          </div>
+          {contactItems.map(({ Icon, value }, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <Icon className="h-4 w-4" style={{ color: '#6CA6CD' }} />
+              <span>{value}</span>
+            </div>
+          ))}
         </div>
       </div>
 
       <div className="p-8 space-y-6">
-        {/* Professional Summary */}
-        <section>
-          <h2 className="text-xl border-l-4 pl-4 mb-3" style={{ borderColor: '#6CA6CD' }}>
-            Professional Summary
-          </h2>
-          <p className="text-gray-700 leading-relaxed pl-5">{cvData.summary}</p>
-        </section>
+        {/* About Me */}
+        {cvData.summary && cvData.summary.trim() && (
+          <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+            <h2 className="text-xl border-l-4 pl-4 mb-3" style={{ borderColor: '#6CA6CD' }}>
+              About Me
+            </h2>
+            <p className="text-gray-700 leading-relaxed pl-5">{cvData.summary}</p>
+          </section>
+        )}
 
         {/* Experience */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <h2 className="text-xl border-l-4 pl-4 mb-4" style={{ borderColor: '#6CA6CD' }}>
             Professional Experience
           </h2>
@@ -157,7 +153,7 @@ export function ModernProfessional({ data }) {
         </section>
 
         {/* Education */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <h2 className="text-xl border-l-4 pl-4 mb-4" style={{ borderColor: '#6CA6CD' }}>Education</h2>
           <div className="space-y-3 pl-5">
             {cvData.education?.map((edu, index) => (
@@ -173,7 +169,7 @@ export function ModernProfessional({ data }) {
         </section>
 
         {/* Skills */}
-        <section>
+        <section style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
           <h2 className="text-xl border-l-4 pl-4 mb-4" style={{ borderColor: '#6CA6CD' }}>Skills</h2>
           <div className="flex flex-wrap gap-2 pl-5">
             {cvData.skills?.map((skill, index) => (

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import JobSelection from '../components/JobSelection';
 
 // SVG Icons
 function CameraIcon({ className }) {
@@ -40,6 +41,11 @@ function ProfilePage() {
   const [skillsSaving, setSkillsSaving] = useState(false);
   const [skillsError, setSkillsError] = useState('');
   const [skillsMessage, setSkillsMessage] = useState('');
+  const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [] });
+  const [jobPrefLoading, setJobPrefLoading] = useState(true);
+  const [jobPrefSaving, setJobPrefSaving] = useState(false);
+  const [jobPrefError, setJobPrefError] = useState('');
+  const [jobPrefMessage, setJobPrefMessage] = useState('');
 
   const userId = user?.id;
 
@@ -99,6 +105,43 @@ function ProfilePage() {
     };
 
     fetchSkills();
+  }, [userId]);
+
+  useEffect(() => {
+    const fetchJobPreferences = async () => {
+      if (!userId) {
+        setJobPrefLoading(false);
+        return;
+      }
+
+      setJobPrefLoading(true);
+      setJobPrefError('');
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/job-preferences/${userId}`);
+        const data = await res.json();
+
+        if (res.ok && data.success && data.preference) {
+          const roles = Array.isArray(data.preference.roles) ? data.preference.roles : [];
+          const countries = Array.isArray(data.preference.countries) ? data.preference.countries : [];
+          setJobPreferences({ roles, countries });
+          localStorage.setItem('jobPreferences', JSON.stringify({
+            roles,
+            countries,
+            timestamp: data.preference.updatedAt || new Date().toISOString(),
+          }));
+        } else {
+          setJobPreferences({ roles: [], countries: [] });
+        }
+      } catch (error) {
+        console.error('Fetch job preferences error:', error);
+        setJobPrefError('Failed to load job preferences. Please try again later.');
+      } finally {
+        setJobPrefLoading(false);
+      }
+    };
+
+    fetchJobPreferences();
   }, [userId]);
 
   const saveSkills = async (nextSkills, previousSkills) => {
@@ -219,6 +262,54 @@ function ProfilePage() {
     await saveSkills(nextSkills, previousSkills);
   };
 
+const handleJobPrefChange = (data) => {
+  setJobPreferences(data);
+};
+
+  const handleSaveJobPreferences = async () => {
+    if (!userId) return false;
+
+    setJobPrefSaving(true);
+    setJobPrefError('');
+    setJobPrefMessage('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/job-preferences`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          roles: jobPreferences.roles,
+          countries: jobPreferences.countries,
+          updatedAt: new Date().toISOString(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save job preferences');
+      }
+
+      setJobPrefMessage('Job preferences updated');
+      setTimeout(() => setJobPrefMessage(''), 2000);
+      localStorage.setItem('jobPreferences', JSON.stringify({
+        roles: Array.isArray(jobPreferences.roles) ? jobPreferences.roles : [],
+        countries: Array.isArray(jobPreferences.countries) ? jobPreferences.countries : [],
+        timestamp: new Date().toISOString(),
+      }));
+      return true;
+    } catch (error) {
+      console.error('Save job preferences error:', error);
+      setJobPrefError(error.message || 'Failed to update job preferences. Please try again.');
+      return false;
+    } finally {
+      setJobPrefSaving(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="p-4 sm:p-6 flex items-center justify-center min-h-[400px]">
@@ -226,6 +317,14 @@ function ProfilePage() {
       </div>
     );
   }
+
+  const handleSaveAll = async () => {
+    const jobPrefSaved = await handleSaveJobPreferences();
+    if (!jobPrefSaved) {
+      return;
+    }
+    navigate(-1);
+  };
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -413,6 +512,57 @@ function ProfilePage() {
         </div>
       </div>
 
+      {/* Job Preferences */}
+      <div 
+        className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
+      >
+        <div className="p-6 sm:p-8 space-y-6">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold dark:text-gray-200 text-gray-900">
+              Job Preferences
+            </h3>
+            <p className="text-sm dark:text-gray-400 text-gray-500">
+              Choose the job roles and countries you&apos;re targeting to personalize recommendations.
+            </p>
+          </div>
+          {(jobPrefError || jobPrefMessage) && (
+            <div>
+              {jobPrefError && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#FEE2E2',
+                  color: '#DC2626',
+                  border: '1px solid #FCA5A5'
+                }}>
+                  {jobPrefError}
+                </div>
+              )}
+              {jobPrefMessage && (
+                <div className="rounded-xl p-3 text-sm" style={{ 
+                  backgroundColor: '#D1FAE5',
+                  color: '#065F46',
+                  border: '1px solid #6EE7B7'
+                }}>
+                  {jobPrefMessage}
+                </div>
+              )}
+            </div>
+          )}
+
+          {jobPrefLoading ? (
+            <p className="text-sm dark:text-gray-400 text-gray-500">
+              Loading job preferences...
+            </p>
+          ) : (
+            <JobSelection
+              key={`${jobPreferences.roles.join(',')}-${jobPreferences.countries.join(',')}`}
+              initialRoles={jobPreferences.roles}
+              initialCountries={jobPreferences.countries}
+              onDataChange={handleJobPrefChange}
+            />
+          )}
+        </div>
+      </div>
+
       {/* Skills */}
       <div 
         className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
@@ -588,16 +738,22 @@ function ProfilePage() {
           Cancel
         </button>
         <button
-          className="px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
-          style={{ backgroundColor: '#6CA6CD' }}
+          onClick={handleSaveAll}
+          disabled={jobPrefSaving || jobPrefLoading}
+          className="px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ backgroundColor: jobPrefSaving || jobPrefLoading ? 'rgba(108, 166, 205, 0.7)' : '#6CA6CD' }}
           onMouseEnter={(e) => {
-            e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+            if (!jobPrefSaving && !jobPrefLoading) {
+              e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
+            }
           }}
           onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#6CA6CD';
+            if (!jobPrefSaving && !jobPrefLoading) {
+              e.target.style.backgroundColor = '#6CA6CD';
+            }
           }}
         >
-          Save Changes
+          {jobPrefSaving || jobPrefLoading ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
     </div>

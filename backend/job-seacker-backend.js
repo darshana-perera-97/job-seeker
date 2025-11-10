@@ -1,8 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { findUserByEmail, addUser, findUserById, updateUser } = require('./utils/userStorage');
 const { findProfileByUserId, upsertProfile, sanitizeWeeklyActivity, sanitizeRecentJobs } = require('./utils/profileStorage');
+const { findCVsByUserId, addCV, deleteCV, getCVFilePath, findCVById, CV_DIR } = require('./utils/cvStorage');
+const { findCVDataByUserId, upsertCVData } = require('./utils/cvDataStorage');
+const { getAllJobs } = require('./utils/jobStorage');
+const { getAllJobPreferences, findJobPreferencesByUserId, upsertJobPreferences } = require('./utils/jobPreferencesStorage');
 
 const defaultPreferences = {
   emailNotifications: true,
@@ -97,6 +104,47 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Ensure CV directory exists
+    if (!fs.existsSync(CV_DIR)) {
+      fs.mkdirSync(CV_DIR, { recursive: true });
+    }
+    cb(null, CV_DIR);
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename: timestamp-random-originalname
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    const name = path.basename(file.originalname, ext);
+    cb(null, `${uniqueSuffix}-${name}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: function (req, file, cb) {
+    // Accept only PDF, DOC, DOCX
+    const allowedTypes = /pdf|doc|docx/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype) || 
+                     file.mimetype === 'application/pdf' ||
+                     file.mimetype === 'application/msword' ||
+                     file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    
+    if (extname && mimetype) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only PDF, DOC, and DOCX files are allowed'));
+    }
+  }
+});
 
 // API Routes
 app.get('/', (req, res) => {
@@ -924,6 +972,423 @@ app.post('/api/profile/skills', (req, res) => {
   }
 });
 
+// CV Upload endpoint
+app.post('/api/cv/upload', upload.single('cvFile'), (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      // Clean up uploaded file if validation fails
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded'
+      });
+    }
+
+    // Verify user exists
+    const user = findUserById(userId);
+    if (!user) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Check CV upload limit (max 3 CVs per user)
+    const existingCVs = findCVsByUserId(userId);
+    if (existingCVs.length >= 3) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({
+        success: false,
+        error: 'Maximum CV upload limit reached. You can only upload 3 CVs. Please delete an existing CV to upload a new one.'
+      });
+    }
+
+    // Get CV name from request body (default to original filename if not provided)
+    const cvName = req.body.cvName || req.file.originalname.replace(/\.[^/.]+$/, '');
+    const isCreated = req.body.isCreated === 'true' || req.body.isCreated === true;
+
+    // Save CV metadata
+    const cvData = {
+      userId: userId,
+      fileName: req.file.filename,
+      originalFileName: req.file.originalname,
+      fileType: req.file.mimetype,
+      fileSize: req.file.size,
+      filePath: req.file.path,
+      cvName: cvName.trim(),
+      isCreated: isCreated,
+    };
+
+    const result = addCV(cvData);
+
+    if (result.success) {
+      // Remove filePath from response for security
+      const { filePath, ...cvResponse } = result.cv;
+      return res.status(201).json({
+        success: true,
+        message: 'CV uploaded successfully',
+        cv: cvResponse
+      });
+    } else {
+      // Clean up uploaded file if save fails
+      fs.unlinkSync(req.file.path);
+      return res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to save CV'
+      });
+    }
+  } catch (error) {
+    console.error('CV upload error:', error);
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Get user's CVs
+app.get('/api/cv/user/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const cvs = findCVsByUserId(userId);
+
+    // Remove filePath from response for security
+    const cvsResponse = cvs.map(cv => {
+      const { filePath, ...cvWithoutPath } = cv;
+      return cvWithoutPath;
+    });
+
+    return res.json({
+      success: true,
+      cvs: cvsResponse
+    });
+  } catch (error) {
+    console.error('Get CVs error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Preview CV file (inline display)
+app.get('/api/cv/:cvId/preview', (req, res) => {
+  try {
+    const { cvId } = req.params;
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const filePath = getCVFilePath(cvId, userId);
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'CV file not found'
+      });
+    }
+
+    // Get CV metadata for content type
+    const cv = findCVById(cvId);
+    const contentType = cv?.fileType || 'application/pdf';
+
+    // Set headers for inline display
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', 'inline; filename="' + (cv?.originalFileName || 'cv.pdf') + '"');
+    
+    // Send file for preview
+    res.sendFile(path.resolve(filePath), (err) => {
+      if (err) {
+        console.error('Preview error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Failed to preview file'
+          });
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Preview CV error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Download CV file
+app.get('/api/cv/:cvId/download', (req, res) => {
+  try {
+    const { cvId } = req.params;
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const filePath = getCVFilePath(cvId, userId);
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'CV file not found'
+      });
+    }
+
+    // Get original filename for download
+    const cv = findCVById(cvId);
+    const originalFileName = cv ? cv.originalFileName : 'cv.pdf';
+
+    res.download(filePath, originalFileName, (err) => {
+      if (err) {
+        console.error('Download error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Failed to download file'
+          });
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Download CV error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Get CV personal details by user ID
+app.get('/api/cv-data/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    const cvData = findCVDataByUserId(userId);
+
+    if (cvData) {
+      return res.json({
+        success: true,
+        cvData: cvData
+      });
+    } else {
+      return res.json({
+        success: true,
+        cvData: null
+      });
+    }
+  } catch (error) {
+    console.error('Get CV data error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Save/Update CV data (personal details and/or CV content)
+app.post('/api/cv-data', (req, res) => {
+  try {
+    const { userId, personalDetails, cvContent } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    if (!personalDetails && !cvContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'Either personal details or CV content is required'
+      });
+    }
+
+    const result = upsertCVData(userId, { personalDetails, cvContent });
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: 'CV data saved successfully',
+        cvData: result.cvData
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to save CV data'
+      });
+    }
+  } catch (error) {
+    console.error('Save CV data error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Jobs endpoint
+app.get('/api/jobs', (req, res) => {
+  try {
+    const jobs = getAllJobs();
+    return res.json({
+      success: true,
+      jobs,
+    });
+  } catch (error) {
+    console.error('Get jobs error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load jobs',
+    });
+  }
+});
+
+// User job preferences
+app.get('/api/job-preferences/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required',
+      });
+    }
+
+    const preference = findJobPreferencesByUserId(userId);
+    return res.json({
+      success: true,
+      preference: preference || null,
+    });
+  } catch (error) {
+    console.error('Get job preferences error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load job preferences',
+    });
+  }
+});
+
+app.post('/api/job-preferences', (req, res) => {
+  try {
+    const { userId, roles, countries, updatedAt } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required',
+      });
+    }
+
+    const result = upsertJobPreferences(userId, { roles, countries, updatedAt });
+    if (result.success) {
+      return res.json({
+        success: true,
+        preference: result.preference,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to save job preferences',
+    });
+  } catch (error) {
+    console.error('Save job preferences error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save job preferences',
+    });
+  }
+});
+
+// Delete CV
+app.delete('/api/cv/:cvId', (req, res) => {
+  try {
+    const { cvId } = req.params;
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    // Check if CV is a created CV (cannot be deleted)
+    const cv = findCVById(cvId);
+    if (cv && cv.isCreated) {
+      return res.status(400).json({
+        success: false,
+        error: 'Created CVs cannot be deleted. You can only delete uploaded CVs.'
+      });
+    }
+
+    const result = deleteCV(cvId, userId);
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: 'CV deleted successfully'
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        error: result.error || 'CV not found'
+      });
+    }
+  } catch (error) {
+    console.error('Delete CV error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
 // 404 handler for undefined routes
 app.use((req, res) => {
   res.status(404).json({
@@ -945,7 +1410,17 @@ app.use((req, res) => {
       'GET /api/profile/recent-jobs/:userId',
       'POST /api/profile/recent-jobs',
       'GET /api/profile/skills/:userId',
-      'POST /api/profile/skills'
+      'POST /api/profile/skills',
+      'POST /api/cv/upload',
+      'GET /api/cv/user/:userId',
+      'GET /api/cv/:cvId/preview',
+      'GET /api/cv/:cvId/download',
+      'DELETE /api/cv/:cvId',
+      'GET /api/cv-data/:userId',
+      'POST /api/cv-data',
+      'GET /api/jobs',
+      'GET /api/job-preferences/:userId',
+      'POST /api/job-preferences'
     ]
   });
 });
@@ -970,5 +1445,15 @@ app.listen(PORT, () => {
   console.log(`  POST http://localhost:${PORT}/api/profile/recent-jobs`);
   console.log(`  GET  http://localhost:${PORT}/api/profile/skills/:userId`);
   console.log(`  POST http://localhost:${PORT}/api/profile/skills`);
+  console.log(`\nJobs:`);
+  console.log(`  GET  http://localhost:${PORT}/api/jobs`);
+  console.log(`  GET  http://localhost:${PORT}/api/job-preferences/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/job-preferences`);
+  console.log(`\nCV Management:`);
+  console.log(`  POST http://localhost:${PORT}/api/cv/upload`);
+  console.log(`  GET  http://localhost:${PORT}/api/cv/user/:userId`);
+  console.log(`  GET  http://localhost:${PORT}/api/cv/:cvId/preview`);
+  console.log(`  GET  http://localhost:${PORT}/api/cv/:cvId/download`);
+  console.log(`  DELETE http://localhost:${PORT}/api/cv/:cvId`);
 });
 
