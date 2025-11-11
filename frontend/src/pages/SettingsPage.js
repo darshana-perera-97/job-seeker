@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import API_BASE_URL from '../utils/apiConfig';
+import { setStoredUser } from '../utils/userStorage';
 
 // SVG Icons
 function MoonIcon({ className }) {
@@ -144,7 +145,7 @@ function SettingsPage() {
       if (data.success) {
         setPasswordSuccess('Password updated successfully!');
         // Update user in localStorage
-        localStorage.setItem('user', JSON.stringify(data.user));
+        setStoredUser(data.user);
         setUser(data.user);
         // Clear form
         setPasswordForm({

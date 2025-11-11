@@ -1,6 +1,7 @@
 import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import API_BASE_URL from '../utils/apiConfig';
+import { setStoredUser } from '../utils/userStorage';
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
 
 function LoginPage() {
@@ -97,7 +98,7 @@ function LoginPage() {
 
       if (data.success) {
         // Store user data in localStorage
-        localStorage.setItem('user', JSON.stringify(data.user));
+        setStoredUser(data.user);
         localStorage.setItem('isAuthenticated', 'true');
         
         // Navigate to dashboard
@@ -282,7 +283,7 @@ function LoginPage() {
 
       if (data.success) {
         // Store user data in localStorage
-        localStorage.setItem('user', JSON.stringify(data.user));
+        setStoredUser(data.user);
         localStorage.setItem('isAuthenticated', 'true');
         
         // Navigate to dashboard

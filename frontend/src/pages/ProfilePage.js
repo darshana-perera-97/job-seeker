@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JobSelection from '../components/JobSelection';
 import API_BASE_URL from '../utils/apiConfig';
+import { setStoredUser } from '../utils/userStorage';
 
 // SVG Icons
 function CameraIcon({ className }) {
@@ -90,7 +91,7 @@ function ProfilePage() {
           }
 
           const updatedUser = { ...prev, skills: fetchedSkills };
-          localStorage.setItem('user', JSON.stringify(updatedUser));
+          setStoredUser(updatedUser);
           return updatedUser;
         });
       } catch (error) {
@@ -185,7 +186,7 @@ function ProfilePage() {
         }
 
         const updatedUser = { ...prev, skills: updatedSkills };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
+        setStoredUser(updatedUser);
         return updatedUser;
       });
 

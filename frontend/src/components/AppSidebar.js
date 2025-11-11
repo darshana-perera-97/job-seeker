@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useSidebar } from './SidebarProvider';
-import { useTheme } from '../contexts/ThemeContext';
+import { getStoredUser } from '../utils/userStorage';
 
 // SVG Icons
 function LayoutDashboardIcon({ className }) {
@@ -69,14 +70,6 @@ function FileTextIcon({ className }) {
   );
 }
 
-function SparklesIcon({ className }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-    </svg>
-  );
-}
-
 function ChevronLeftIcon({ className }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,6 +84,17 @@ function ChevronRightIcon({ className }) {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
     </svg>
   );
+}
+
+function getInitials(name = '') {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return 'U';
+  }
+
+  const parts = trimmed.split(/\s+/).slice(0, 2);
+  const initials = parts.map((part) => part.charAt(0).toUpperCase()).join('');
+  return initials || 'U';
 }
 
 const mainMenuItems = [
@@ -205,6 +209,31 @@ function AppSidebar({ isMobile, isOpen, onClose }) {
   const location = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed' && !isMobile;
+  const [sidebarUser, setSidebarUser] = useState(() => getStoredUser());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleUserUpdate = () => {
+      setSidebarUser(getStoredUser());
+    };
+
+    handleUserUpdate();
+
+    window.addEventListener('user:updated', handleUserUpdate);
+    window.addEventListener('storage', handleUserUpdate);
+
+    return () => {
+      window.removeEventListener('user:updated', handleUserUpdate);
+      window.removeEventListener('storage', handleUserUpdate);
+    };
+  }, []);
+
+  const profileName = sidebarUser?.fullName?.trim() || 'Guest User';
+  const profileEmail = sidebarUser?.email?.trim() || 'Complete your profile';
+  const profileInitials = getInitials(profileName || profileEmail);
 
   const currentPath = location.pathname;
 
@@ -322,7 +351,11 @@ function AppSidebar({ isMobile, isOpen, onClose }) {
 
       {/* Footer */}
       <div className="border-t p-2 shrink-0 overflow-x-hidden dark:border-[rgba(108,166,205,0.25)] dark:bg-[#1A1F2E] bg-white border-[rgba(108,166,205,0.15)]">
-        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2'} rounded-lg p-2.5 mb-2 min-w-0 dark:bg-[rgba(108,166,205,0.08)] bg-[rgba(108,166,205,0.05)]`}
+        <Link
+          to="/profile"
+          className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2'} rounded-lg p-2.5 mb-2 min-w-0 dark:bg-[rgba(108,166,205,0.08)] bg-[rgba(108,166,205,0.05)] transition-colors duration-200`}
+          onClick={handleMenuClick}
+          title={isCollapsed ? profileName : undefined}
         >
           <div
             className="h-9 w-9 shrink-0 rounded-full border-2 flex items-center justify-center"
@@ -331,18 +364,27 @@ function AppSidebar({ isMobile, isOpen, onClose }) {
               background: 'linear-gradient(to bottom right, #6CA6CD, #B2A5FF)'
             }}
           >
-            <span className="text-white text-sm font-medium">JD</span>
+            <span className="text-white text-sm font-medium">
+              {profileInitials}
+            </span>
           </div>
           {!isCollapsed && (
             <>
               <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-                <p className="text-sm font-medium truncate dark:text-gray-100 text-gray-900">John Doe</p>
-                <p className="text-xs truncate dark:text-gray-400 text-gray-500">Premium Plan</p>
+                <p className="text-sm font-medium truncate dark:text-gray-100 text-gray-900">
+                  {profileName}
+                </p>
+                <p className="text-xs truncate dark:text-gray-400 text-gray-500">
+                  {profileEmail}
+                </p>
               </div>
-              <SparklesIcon className="h-3.5 w-3.5 shrink-0" style={{ color: '#6CA6CD' }} />
+              <ChevronRightIcon
+                className="h-3.5 w-3.5 shrink-0"
+                style={{ strokeWidth: 2, color: '#6CA6CD' }}
+              />
             </>
           )}
-        </div>
+        </Link>
 
         <Link
           to="/login"

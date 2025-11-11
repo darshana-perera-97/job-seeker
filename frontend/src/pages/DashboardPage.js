@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../utils/apiConfig';
+import { setStoredUser } from '../utils/userStorage';
 import StatsCard from '../components/StatsCard';
 import WelcomePopup from '../components/WelcomePopup';
 import {
@@ -675,7 +676,7 @@ function DashboardPage() {
         return prev;
       }
       const updatedUser = { ...prev, analytics: nextAnalytics };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setStoredUser(updatedUser);
       return updatedUser;
     });
   };
@@ -688,7 +689,7 @@ function DashboardPage() {
         return prev;
       }
       const updatedUser = { ...prev, weeklyActivity: nextActivity };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setStoredUser(updatedUser);
       return updatedUser;
     });
   };
@@ -701,7 +702,7 @@ function DashboardPage() {
         return prev;
       }
       const updatedUser = { ...prev, recentJobs: nextJobs };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setStoredUser(updatedUser);
       return updatedUser;
     });
   };
