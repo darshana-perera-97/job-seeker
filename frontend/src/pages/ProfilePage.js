@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JobSelection from '../components/JobSelection';
+import API_BASE_URL from '../utils/apiConfig';
 
 // SVG Icons
 function CameraIcon({ className }) {
@@ -27,10 +28,6 @@ function Trash2Icon({ className }) {
     </svg>
   );
 }
-
-let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-const API_BASE_URL = apiBaseUrl;
 
 function ProfilePage() {
   const navigate = useNavigate();

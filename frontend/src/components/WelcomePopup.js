@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JobSelection from './JobSelection';
-
-// Get API base URL
-let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-const API_BASE_URL = apiBaseUrl;
+import API_BASE_URL from '../utils/apiConfig';
 
 function WelcomePopup({ user, onClose }) {
   const navigate = useNavigate();

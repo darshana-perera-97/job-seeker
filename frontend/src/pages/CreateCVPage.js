@@ -12,6 +12,7 @@ import templateImage1 from '../assets/CV-template-01.jpg';
 import templateImage2 from '../assets/CV-template-02.jpg';
 import templateImage3 from '../assets/CV-template-03.jpg';
 import templateImage4 from '../assets/CV-template-04.jpg';
+import API_BASE_URL from '../utils/apiConfig';
 
 // SVG Icons
 function DownloadIcon({ className }) {
@@ -63,11 +64,6 @@ const templates = [
   { id: 3, name: 'Minimalist Clean', component: MinimalistClean, description: 'Ultra-minimal centered design', image: templateImage3 },
   { id: 4, name: 'Executive Elite', component: ExecutiveElite, description: 'Premium dark theme with gold', image: templateImage4 },
 ];
-
-// Get API base URL
-let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-const API_BASE_URL = apiBaseUrl;
 
 function CreateCVPage() {
   const navigate = useNavigate();

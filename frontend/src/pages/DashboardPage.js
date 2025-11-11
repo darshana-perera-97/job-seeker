@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import API_BASE_URL from '../utils/apiConfig';
 import StatsCard from '../components/StatsCard';
 import WelcomePopup from '../components/WelcomePopup';
 import {
@@ -54,6 +55,7 @@ function PlusIcon({ className }) {
 }
 
 const defaultWeeklyActivity = [
+  { name: 'Sun', cvs: 0, jobs: 0 },
   { name: 'Mon', cvs: 2, jobs: 1 },
   { name: 'Tue', cvs: 3, jobs: 2 },
   { name: 'Wed', cvs: 1, jobs: 1 },
@@ -88,10 +90,6 @@ const recentJobsSeed = [
     appliedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
   }
 ];
-
-let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-const API_BASE_URL = apiBaseUrl;
 
 const defaultAnalytics = {
   cvsCreated: {
@@ -171,6 +169,48 @@ function getTrendText(key, entry) {
   return `${sign}${magnitude}${suffix}`;
 }
 
+function parseNumericValue(value) {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isNaN(value) ? 0 : value;
+  }
+
+  const match = String(value).match(/-?\d+(?:\.\d+)?/);
+  if (!match) {
+    return 0;
+  }
+
+  const parsed = Number(match[0]);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function buildNumericAnalyticsEntry(previousEntry, nextValue) {
+  const prevValue = parseNumericValue(previousEntry?.value);
+  const numericNext = Number.isFinite(nextValue) ? nextValue : 0;
+  const delta = numericNext - prevValue;
+
+  return {
+    value: String(numericNext),
+    trend: Math.abs(delta),
+    trendUp: delta >= 0
+  };
+}
+
+function buildPercentAnalyticsEntry(previousEntry, nextPercent) {
+  const prevPercent = parseNumericValue(previousEntry?.value);
+  const normalizedPercent = Number.isFinite(nextPercent) ? nextPercent : 0;
+  const delta = normalizedPercent - prevPercent;
+
+  return {
+    value: `${normalizedPercent}%`,
+    trend: Math.abs(delta),
+    trendUp: delta >= 0
+  };
+}
+
 function normalizeWeeklyActivity(activity) {
   const sanitized = Array.isArray(activity) ? activity : [];
   const usedKeys = new Set();
@@ -217,7 +257,73 @@ function normalizeWeeklyActivity(activity) {
       };
     });
 
-  return [...normalized, ...extraEntries].slice(0, 6);
+  return [...normalized, ...extraEntries].slice(0, 7);
+}
+
+// Helper function to normalize strings
+function normalizeString(value) {
+  return (value || '').toLowerCase();
+}
+
+// Reorder weekly activity to show today at the end (rightmost position)
+// Shows last 6 days before today, then today (all 7 days): e.g., if today is Wed, show Thu, Fri, Sat, Sun, Mon, Tue, Wed
+function reorderWeeklyActivityForToday(activity) {
+  if (!Array.isArray(activity) || activity.length === 0) {
+    return activity;
+  }
+
+  // Get today's day name (Mon, Tue, Wed, etc.)
+  const today = new Date();
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayIndex = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const todayName = dayNames[todayIndex];
+
+  // Create a map of day name to activity data for easy lookup
+  const activityMap = new Map();
+  activity.forEach(item => {
+    if (item && item.name) {
+      activityMap.set(normalizeString(item.name), item);
+    }
+  });
+
+  // Build the result array: last 6 days before today, then today (total 7 days)
+  const result = [];
+  
+  // Get the last 6 days before today (going backwards from yesterday)
+  for (let i = 6; i >= 1; i--) {
+    const dayIndex = (todayIndex - i + 7) % 7; // Handle wrap-around for days before
+    const dayName = dayNames[dayIndex];
+    const dayKey = normalizeString(dayName);
+    
+    // Find the activity data for this day
+    const dayData = activityMap.get(dayKey);
+    if (dayData) {
+      result.push(dayData);
+    } else {
+      // If data doesn't exist, create a default entry
+      result.push({
+        name: dayName,
+        cvs: 0,
+        jobs: 0
+      });
+    }
+  }
+  
+  // Add today at the end
+  const todayKey = normalizeString(todayName);
+  const todayData = activityMap.get(todayKey);
+  if (todayData) {
+    result.push(todayData);
+  } else {
+    result.push({
+      name: todayName,
+      cvs: 0,
+      jobs: 0
+    });
+  }
+
+  // Return exactly 7 days (6 days before + today)
+  return result;
 }
 
 function normalizeRecentJobs(jobs) {
@@ -295,13 +401,27 @@ function DashboardPage() {
   const [analytics, setAnalytics] = useState(defaultAnalytics);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError, setAnalyticsError] = useState('');
-  const [weeklyActivity, setWeeklyActivity] = useState(defaultWeeklyActivity);
+  const [weeklyActivity, setWeeklyActivity] = useState(() => reorderWeeklyActivityForToday(defaultWeeklyActivity));
   const [weeklyActivityLoading, setWeeklyActivityLoading] = useState(true);
   const [weeklyActivityError, setWeeklyActivityError] = useState('');
   const [recentJobs, setRecentJobs] = useState(recentJobsSeed);
   const [recentJobsLoading, setRecentJobsLoading] = useState(true);
   const [recentJobsError, setRecentJobsError] = useState('');
   const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+  const [browseJobs, setBrowseJobs] = useState([]);
+  const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [], skills: [] });
+  const [matchStats, setMatchStats] = useState({
+    perfect: 0,
+    related: 0,
+    other: 0,
+    total: 0
+  });
+  const analyticsRef = useRef(defaultAnalytics);
+  const userId = user?.id;
+
+  useEffect(() => {
+    analyticsRef.current = analytics;
+  }, [analytics]);
 
   useEffect(() => {
     try {
@@ -337,7 +457,215 @@ function DashboardPage() {
     }
   }, [user?.recentJobs]);
 
-  const userId = user?.id;
+  // Fetch job preferences
+  useEffect(() => {
+    const fetchJobPreferences = async () => {
+      if (!user?.id) return;
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/job-preferences/${user.id}`);
+        const data = await res.json();
+
+        if (res.ok && data.success && data.preference) {
+          setJobPreferences({
+            roles: Array.isArray(data.preference.roles) ? data.preference.roles : [],
+            countries: Array.isArray(data.preference.countries) ? data.preference.countries : [],
+            skills: Array.isArray(data.preference.skills) ? data.preference.skills : [],
+          });
+        }
+      } catch (error) {
+        console.error('Error loading job preferences:', error);
+      }
+    };
+
+    fetchJobPreferences();
+  }, [user?.id]);
+
+  // Fetch and filter jobs for dashboard
+  useEffect(() => {
+    const fetchAndFilterJobs = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/jobs`);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.jobs)) {
+          const { roles, countries } = jobPreferences;
+          
+          const normalizeString = (value) => (value || '').toLowerCase();
+          
+          // Generate a random rating within a range (for consistent per-job ratings)
+          const getRandomRating = (jobId, min, max) => {
+            const seed = jobId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            const random = (seed * 9301 + 49297) % 233280 / 233280;
+            return Number((min + random * (max - min)).toFixed(1));
+          };
+
+          if (roles.length === 0 && countries.length === 0) {
+            // If no preferences, show all jobs sorted by date
+            const sorted = data.jobs.sort((a, b) => {
+              const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+              const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+              return dateB - dateA;
+            });
+            setBrowseJobs(sorted.slice(0, 5));
+            setMatchStats({
+              perfect: 0,
+              related: 0,
+              other: 0,
+              total: 0
+            });
+            return;
+          }
+
+          // Categorize jobs
+          const perfectMatches = [];
+          const relatedJobs = [];
+          const otherJobs = [];
+
+          data.jobs.forEach((job) => {
+            const title = normalizeString(job.title);
+            const country = normalizeString(job.country);
+            
+            const matchesRole = roles.length > 0 && roles.some(role => 
+              title.includes(normalizeString(role))
+            );
+            
+            const matchesCountry = countries.length > 0 && countries.some(prefCountry => 
+              normalizeString(country) === normalizeString(prefCountry)
+            );
+
+            if (matchesRole && matchesCountry) {
+              perfectMatches.push({
+                ...job,
+                rating: 4.5,
+                category: 'perfect'
+              });
+            } else if (matchesRole && !matchesCountry) {
+              relatedJobs.push({
+                ...job,
+                rating: getRandomRating(job.id, 2.5, 3.5),
+                category: 'related'
+              });
+            } else if (!matchesRole && matchesCountry) {
+              otherJobs.push({
+                ...job,
+                rating: getRandomRating(job.id, 0.5, 1.5),
+                category: 'other'
+              });
+            }
+          });
+
+          // Sort each category by date
+          const sortByDate = (a, b) => {
+            const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            return dateB - dateA;
+          };
+
+          perfectMatches.sort(sortByDate);
+          relatedJobs.sort(sortByDate);
+          otherJobs.sort(sortByDate);
+
+          // Combine and take first 5
+          const allJobs = [...perfectMatches, ...relatedJobs, ...otherJobs];
+          setBrowseJobs(allJobs.slice(0, 5));
+          setMatchStats({
+            perfect: perfectMatches.length,
+            related: relatedJobs.length,
+            other: otherJobs.length,
+            total: allJobs.length
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching jobs for dashboard:', error);
+        setMatchStats({
+          perfect: 0,
+          related: 0,
+          other: 0,
+          total: 0
+        });
+      }
+    };
+
+    fetchAndFilterJobs();
+  }, [jobPreferences]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    if (weeklyActivityLoading) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const updateAnalyticsFromRealData = async () => {
+      try {
+        const [cvsRes, appliedRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/cv/user/${userId}`),
+          fetch(`${API_BASE_URL}/api/applied-jobs/${userId}`)
+        ]);
+
+        const cvsJson = await cvsRes.json().catch(() => ({ success: false }));
+        const appliedJson = await appliedRes.json().catch(() => ({ success: false }));
+
+        if (isCancelled) {
+          return;
+        }
+
+        const cvsList = cvsRes.ok && cvsJson.success && Array.isArray(cvsJson.cvs) ? cvsJson.cvs : [];
+        const totalCvs = cvsList.length;
+
+        const appliedList = appliedRes.ok && appliedJson.success && Array.isArray(appliedJson.jobs) ? appliedJson.jobs : [];
+        const totalApplied = appliedList.length;
+
+        const weeklyData = Array.isArray(weeklyActivity) ? weeklyActivity : [];
+        const weeklyApplications = weeklyData.reduce((sum, day) => sum + (Number(day.jobs) || 0), 0);
+
+        const perfectMatches = matchStats.perfect || 0;
+        const totalMatches = matchStats.total || 0;
+        const skillMatchPercent = totalMatches > 0
+          ? Math.round((perfectMatches / totalMatches) * 100)
+          : 0;
+
+        const prevAnalyticsSnapshot = analyticsRef.current;
+        const nextAnalytics = {
+          cvsCreated: buildNumericAnalyticsEntry(prevAnalyticsSnapshot?.cvsCreated, totalCvs),
+          jobsApplied: buildNumericAnalyticsEntry(prevAnalyticsSnapshot?.jobsApplied, totalApplied),
+          cvsSent: buildNumericAnalyticsEntry(prevAnalyticsSnapshot?.cvsSent, weeklyApplications),
+          skillMatch: buildPercentAnalyticsEntry(prevAnalyticsSnapshot?.skillMatch, skillMatchPercent)
+        };
+
+        const hasChanged = JSON.stringify(prevAnalyticsSnapshot) !== JSON.stringify(nextAnalytics);
+
+        analyticsRef.current = nextAnalytics;
+
+        if (hasChanged) {
+          setAnalytics(nextAnalytics);
+          await saveAnalytics(nextAnalytics, { silent: true, updateState: false });
+        }
+
+        setAnalyticsError('');
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Real-time analytics update error:', error);
+          setAnalyticsError((prev) => prev || 'Unable to update analytics with the latest data.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setAnalyticsLoading(false);
+        }
+      }
+    };
+
+    updateAnalyticsFromRealData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [userId, weeklyActivityLoading, weeklyActivity, matchStats]);
 
   const updateCachedUserAnalytics = (nextAnalytics) => {
     setUser((prev) => {
@@ -496,6 +824,8 @@ function DashboardPage() {
     if (!userId) {
       setAnalyticsLoading(false);
       setWeeklyActivityLoading(false);
+      const reorderedDefaults = reorderWeeklyActivityForToday(defaultWeeklyActivity);
+      setWeeklyActivity(reorderedDefaults);
       setRecentJobs(recentJobsSeed);
       setRecentJobsLoading(false);
       return;
@@ -550,10 +880,11 @@ function DashboardPage() {
         }
 
         const normalized = normalizeWeeklyActivity(data.weeklyActivity);
+        const reordered = reorderWeeklyActivityForToday(normalized);
 
         if (!isMounted) return;
 
-        setWeeklyActivity(normalized);
+        setWeeklyActivity(reordered);
         updateCachedWeeklyActivity(normalized);
 
         if (data.isDefault) {
@@ -563,7 +894,8 @@ function DashboardPage() {
         if (!isMounted) return;
         console.error('Fetch weekly activity error:', error);
         setWeeklyActivityError(error.message || 'Failed to load weekly activity. Showing defaults.');
-        setWeeklyActivity(defaultWeeklyActivity);
+        const reorderedDefaults = reorderWeeklyActivityForToday(defaultWeeklyActivity);
+        setWeeklyActivity(reorderedDefaults);
       } finally {
         if (isMounted) {
           setWeeklyActivityLoading(false);
@@ -737,10 +1069,10 @@ function DashboardPage() {
             <div className="p-4 sm:p-6">
               <div className="mb-4">
                 <h3 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">Weekly Activity</h3>
-                <p className="text-sm dark:text-gray-400 text-gray-500">Your CV creation and job application trends</p>
+                <p className="text-sm dark:text-gray-400 text-gray-500">Your viewed jobs and applied jobs trends</p>
               </div>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={weeklyActivity.slice(0, 6)}>
+                <LineChart data={weeklyActivity}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(108, 166, 205, 0.1)" />
                   <XAxis
                     dataKey="name"
@@ -762,7 +1094,7 @@ function DashboardPage() {
                     stroke="#6CA6CD"
                     strokeWidth={2}
                     dot={{ fill: "#6CA6CD", r: 4 }}
-                    name="CVs Created"
+                    name="Viewed Jobs"
                   />
                   <Line
                     type="monotone"
@@ -770,7 +1102,7 @@ function DashboardPage() {
                     stroke="#B2A5FF"
                     strokeWidth={2}
                     dot={{ fill: "#B2A5FF", r: 4 }}
-                    name="Jobs Applied"
+                    name="Applied Jobs"
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -782,35 +1114,49 @@ function DashboardPage() {
             className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
           >
             <div className="p-4 sm:p-6">
-              <div className="mb-4">
-                <h3 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">Recent Jobs</h3>
-                <p className="text-sm dark:text-gray-400 text-gray-500">Your latest applications and activity</p>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold mb-1 dark:text-gray-200 text-gray-900">Recent Jobs</h3>
+                  <p className="text-sm dark:text-gray-400 text-gray-500">Recommended jobs based on your preferences</p>
+                </div>
+                <button
+                  onClick={() => navigate('/view-jobs')}
+                  className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
+                >
+                  Browse All
+                </button>
               </div>
               <div className="space-y-4">
-                {recentJobs.slice(0, 6).map((job) => (
-                  <div key={job.id} className="flex gap-3">
-                    <div 
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                      style={{
-                        background: 'linear-gradient(to bottom right, rgba(108, 166, 205, 0.2), rgba(178, 165, 255, 0.2))'
-                      }}
-                    >
+                {browseJobs.length > 0 ? (
+                  browseJobs.map((job) => (
+                    <div key={job.id} className="flex gap-3">
                       <div 
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: '#6CA6CD' }}
-                      />
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                        style={{
+                          background: 'linear-gradient(to bottom right, rgba(108, 166, 205, 0.2), rgba(178, 165, 255, 0.2))'
+                        }}
+                      >
+                        <div 
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: '#6CA6CD' }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium dark:text-gray-200 text-gray-900">
+                          {job.title}
+                          <span className="dark:text-gray-400 text-gray-500"> — {job.company}</span>
+                        </p>
+                        <p className="text-xs mt-0.5 dark:text-gray-400 text-gray-500">
+                          {job.country} {job.rating > 0 && `• ${job.rating}★`}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium dark:text-gray-200 text-gray-900">
-                        {job.title}
-                        <span className="dark:text-gray-400 text-gray-500"> — {job.company}</span>
-                      </p>
-                      <p className="text-xs mt-0.5 dark:text-gray-400 text-gray-500">
-                        {formatTimeAgo(job.appliedAt)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-sm dark:text-gray-400 text-gray-500 text-center py-4">
+                    No recommended jobs found. Update your preferences to see matches.
+                  </p>
+                )}
               </div>
             </div>
           </div>

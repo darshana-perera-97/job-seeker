@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
+import API_BASE_URL from '../utils/apiConfig';
 
 // SVG Icons
 function MoonIcon({ className }) {
@@ -65,11 +66,6 @@ function SettingsPage() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
-
-  // Get API base URL
-  let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-  apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-  const API_BASE_URL = apiBaseUrl;
 
   // Get user data from localStorage
   useEffect(() => {
@@ -211,7 +207,7 @@ function SettingsPage() {
     };
 
     fetchPreferences();
-  }, [user, API_BASE_URL]);
+  }, [user]);
 
   const savePreferences = async (updatedPreferences) => {
     if (!user) return;

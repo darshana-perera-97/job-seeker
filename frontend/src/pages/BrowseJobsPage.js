@@ -1,19 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import API_BASE_URL from '../utils/apiConfig';
 
 // SVG Icons
 function SearchIcon({ className }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-    </svg>
-  );
-}
-
-function FilterIcon({ className }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
     </svg>
   );
 }
@@ -111,13 +104,8 @@ function StarRating({ rating = 0, maxRating = 5, size = "h-4 w-4" }) {
   );
 }
 
-let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-const API_BASE_URL = apiBaseUrl;
-
 function BrowseJobsPage() {
   const navigate = useNavigate();
-  const [jobType, setJobType] = useState('all');
   const [experience, setExperience] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [jobs, setJobs] = useState([]);
@@ -126,6 +114,7 @@ function BrowseJobsPage() {
   const [user, setUser] = useState(null);
   const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [], skills: [] });
   const [currentPage, setCurrentPage] = useState(1);
+  const [appliedJobs, setAppliedJobs] = useState([]);
   const jobsPerPage = 5;
 
   // Get user from localStorage
@@ -165,6 +154,55 @@ function BrowseJobsPage() {
     fetchJobPreferences();
   }, [user?.id]);
 
+  const mapAppliedJobsFromResponse = useCallback((jobsArray) => {
+    if (!Array.isArray(jobsArray)) {
+      return [];
+    }
+
+    return jobsArray.map((job) => ({
+      jobId: job?.jobId ? String(job.jobId) : job?.id ? String(job.id) : null,
+      jobTitle: job?.jobTitle || job?.title || 'Job Title',
+      company: job?.company || job?.companyName || 'Company',
+      country: job?.country || job?.location || '',
+      appliedDate: job?.appliedDate || '',
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setAppliedJobs([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchAppliedJobs = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/applied-jobs/${user.id}`);
+        const data = await res.json();
+
+        if (isCancelled) return;
+
+        if (res.ok && data.success) {
+          setAppliedJobs(mapAppliedJobsFromResponse(data.jobs));
+        } else {
+          setAppliedJobs([]);
+        }
+      } catch (error) {
+        console.error('Error loading applied jobs:', error);
+        if (!isCancelled) {
+          setAppliedJobs([]);
+        }
+      }
+    };
+
+    fetchAppliedJobs();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user?.id, mapAppliedJobsFromResponse]);
+
   useEffect(() => {
     const fetchJobs = async () => {
       setLoading(true);
@@ -190,6 +228,37 @@ function BrowseJobsPage() {
   }, []);
 
   const normalizeString = (value) => (value || '').toLowerCase();
+  const getAppliedJobKey = (title, company) => `${normalizeString(title)}|${normalizeString(company)}`;
+
+  const appliedJobsLookup = useMemo(() => {
+    const byId = new Set();
+    const byKey = new Set();
+
+    appliedJobs.forEach((job) => {
+      if (job?.jobId) {
+        byId.add(String(job.jobId));
+      }
+      const key = getAppliedJobKey(job?.jobTitle, job?.company);
+      if (key !== '|') {
+        byKey.add(key);
+      }
+    });
+
+    return { byId, byKey };
+  }, [appliedJobs]);
+
+  const isJobApplied = useCallback(
+    (job) => {
+      if (!job) return false;
+      if (appliedJobsLookup.byId.has(String(job.id))) {
+        return true;
+      }
+
+      const key = getAppliedJobKey(job.title, job.company);
+      return key !== '|' && appliedJobsLookup.byKey.has(key);
+    },
+    [appliedJobsLookup]
+  );
 
   // Generate a random rating within a range (for consistent per-job ratings)
   const getRandomRating = (jobId, min, max) => {
@@ -199,7 +268,7 @@ function BrowseJobsPage() {
     return Number((min + random * (max - min)).toFixed(1));
   };
 
-  // Check if job matches basic filters (search, type, experience)
+  // Check if job matches basic filters (search and experience)
   const matchesBasicFilters = (job) => {
     const query = normalizeString(searchQuery);
     const title = normalizeString(job.title);
@@ -218,16 +287,11 @@ function BrowseJobsPage() {
       description.includes(query) ||
       requirements.includes(query);
 
-    const matchesType =
-      jobType === 'all' ||
-      normalizeString(job.jobType) === normalizeString(jobType) ||
-      (jobType === 'remote' && normalizeString(job.jobType).includes('remote'));
-
     const matchesExperience =
       experience === 'all' ||
       normalizeString(job.experienceLevel).includes(normalizeString(experience));
 
-    return matchesQuery && matchesType && matchesExperience;
+    return matchesQuery && matchesExperience;
   };
 
   const formatUpdatedAt = (isoDate) => {
@@ -250,7 +314,7 @@ function BrowseJobsPage() {
   const filteredJobs = useMemo(() => {
     const { roles, countries } = jobPreferences;
     
-    // First, filter by basic filters (search, type, experience)
+    // First, filter by basic filters (search + experience)
     const basicFiltered = jobs.filter(matchesBasicFilters);
     
     if (roles.length === 0 && countries.length === 0) {
@@ -322,12 +386,12 @@ function BrowseJobsPage() {
 
     // Combine in order: Perfect Matches, Related Jobs, Other Jobs
     return [...perfectMatches, ...relatedJobs, ...otherJobs];
-  }, [jobs, jobType, experience, searchQuery, jobPreferences]);
+  }, [jobs, experience, searchQuery, jobPreferences]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [jobType, experience, searchQuery, jobPreferences]);
+  }, [experience, searchQuery, jobPreferences]);
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredJobs.length / jobsPerPage);
@@ -339,7 +403,7 @@ function BrowseJobsPage() {
   const getCategoryLabel = (category) => {
     switch (category) {
       case 'perfect':
-        return 'Perfect Matches';
+        return 'Best Matching';
       case 'related':
         return 'Related Jobs';
       case 'other':
@@ -356,12 +420,31 @@ function BrowseJobsPage() {
 
   const handleApplyNow = (jobId) => {
     const job = jobs.find((item) => item.id === jobId);
-    if (job?.siteLink) {
-      window.open(job.siteLink, '_blank', 'noopener,noreferrer');
+    if (!job) {
       return;
     }
+
+    if (isJobApplied(job)) {
+      return;
+    }
+
+    // Track the application
+    trackJobApplication(jobId);
+
+    if (job) {
+      saveAppliedJobRecord(job);
+    }
+
     if (job?.contactEmail) {
-      window.location.href = `mailto:${job.contactEmail}`;
+      const subject = job?.title ? encodeURIComponent(job.title) : '';
+      const mailtoLink = subject
+        ? `mailto:${job.contactEmail}?subject=${subject}`
+        : `mailto:${job.contactEmail}`;
+      window.location.href = mailtoLink;
+      return;
+    }
+    if (job?.siteLink) {
+      window.open(job.siteLink, '_blank', 'noopener,noreferrer');
       return;
     }
     navigate('/create-cv');
@@ -374,6 +457,166 @@ function BrowseJobsPage() {
     } else if (job?.contactEmail) {
       window.location.href = `mailto:${job.contactEmail}`;
     }
+  };
+
+  // Track job view and update weekly activity
+  const trackJobView = async (jobId) => {
+    if (!user?.id) return;
+
+    try {
+      // Get today's day name
+      const today = new Date();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const todayName = dayNames[today.getDay()];
+
+      // Fetch current weekly activity
+      const res = await fetch(`${API_BASE_URL}/api/profile/activity/${user.id}`);
+      const data = await res.json();
+
+      if (res.ok && data.success && Array.isArray(data.weeklyActivity)) {
+        // Find today's entry and increment cvs (viewed jobs)
+        let foundToday = false;
+        const updatedActivity = data.weeklyActivity.map((day) => {
+          if (day.name && normalizeString(day.name) === normalizeString(todayName)) {
+            foundToday = true;
+            return {
+              ...day,
+              cvs: (day.cvs || 0) + 1
+            };
+          }
+          return day;
+        });
+
+        // If today's entry doesn't exist, add it
+        if (!foundToday) {
+          updatedActivity.push({
+            name: todayName,
+            cvs: 1,
+            jobs: 0
+          });
+        }
+
+        // Update weekly activity
+        await fetch(`${API_BASE_URL}/api/profile/activity`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            weeklyActivity: updatedActivity
+          }),
+        });
+      }
+    } catch (error) {
+      console.error('Error tracking job view:', error);
+      // Silently fail - don't interrupt user experience
+    }
+  };
+
+  // Track job application and update weekly activity
+  const trackJobApplication = async (jobId) => {
+    if (!user?.id) return;
+
+    try {
+      // Get today's day name
+      const today = new Date();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const todayName = dayNames[today.getDay()];
+
+      // Fetch current weekly activity
+      const res = await fetch(`${API_BASE_URL}/api/profile/activity/${user.id}`);
+      const data = await res.json();
+
+      if (res.ok && data.success && Array.isArray(data.weeklyActivity)) {
+        // Find today's entry and increment jobs (applied jobs)
+        let foundToday = false;
+        const updatedActivity = data.weeklyActivity.map((day) => {
+          if (day.name && normalizeString(day.name) === normalizeString(todayName)) {
+            foundToday = true;
+            return {
+              ...day,
+              jobs: (day.jobs || 0) + 1
+            };
+          }
+          return day;
+        });
+
+        // If today's entry doesn't exist, add it
+        if (!foundToday) {
+          updatedActivity.push({
+            name: todayName,
+            cvs: 0,
+            jobs: 1
+          });
+        }
+
+        // Update weekly activity
+        await fetch(`${API_BASE_URL}/api/profile/activity`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            weeklyActivity: updatedActivity
+          }),
+        });
+      }
+    } catch (error) {
+      console.error('Error tracking job application:', error);
+      // Silently fail - don't interrupt user experience
+    }
+  };
+
+  const saveAppliedJobRecord = async (job) => {
+    if (!user?.id || !job) return;
+
+    try {
+      const payload = {
+        userId: user.id,
+        jobId: job.id || null,
+        jobTitle: job.title || job.jobTitle || 'Job Title',
+        company: job.company || job.companyName || 'Company',
+        country: job.country || job.location || '',
+        appliedDate: new Date().toISOString(),
+      };
+
+      const res = await fetch(`${API_BASE_URL}/api/applied-jobs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setAppliedJobs(mapAppliedJobsFromResponse(data.jobs));
+        } else {
+          setAppliedJobs((prev) => {
+            const updated = [...prev];
+            updated.unshift({
+              jobId: payload.jobId ? String(payload.jobId) : null,
+              jobTitle: payload.jobTitle,
+              company: payload.company,
+              country: payload.country,
+              appliedDate: payload.appliedDate,
+            });
+            return updated;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error saving applied job:', error);
+      // Silently fail
+    }
+  };
+
+  const handleJobCardClick = (jobId) => {
+    // Track the view
+    trackJobView(jobId);
   };
 
   return (
@@ -403,19 +646,6 @@ function BrowseJobsPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50"
               />
-            </div>
-            <div className="relative">
-              <select
-                value={jobType}
-                onChange={(e) => setJobType(e.target.value)}
-                className="w-full md:w-48 px-4 py-2.5 pr-10 rounded-xl border transition-colors dark:bg-[#0F1419] dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6CA6CD] focus:ring-opacity-50 appearance-none cursor-pointer"
-              >
-                <option value="all">All Types</option>
-                <option value="fulltime">Full-time</option>
-                <option value="contract">Contract</option>
-                <option value="remote">Remote</option>
-              </select>
-              <FilterIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 dark:text-gray-400 text-gray-500 pointer-events-none" />
             </div>
             <div className="relative">
               <select
@@ -461,6 +691,7 @@ function BrowseJobsPage() {
           const prevJob = index > 0 ? paginatedJobs[index - 1] : null;
           const showHeader = !prevJob || prevJob.category !== job.category;
           const categoryLabel = getCategoryLabel(job.category);
+          const applied = isJobApplied(job);
 
           return (
             <div key={job.id}>
@@ -470,13 +701,14 @@ function BrowseJobsPage() {
                     {categoryLabel}
                   </h2>
                   <p className="text-sm dark:text-gray-400 text-gray-500 mt-1">
-                    {job.category === 'perfect' && 'Jobs matching your preferred role and country'}
-                    {job.category === 'related' && 'Same role in different countries'}
+                    {job.category === 'perfect' && 'Jobs that match both your preferred role and country'}
+                    {job.category === 'related' && 'Same role, available in other countries'}
                     {job.category === 'other' && 'Other opportunities in your preferred countries'}
                   </p>
                 </div>
               )}
               <div
+                onClick={() => handleJobCardClick(job.id)}
                 className="rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer group dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
               >
             <div className="p-4 sm:p-6">
@@ -490,9 +722,21 @@ function BrowseJobsPage() {
                        <p className="text-sm dark:text-gray-400 text-gray-500 mb-1">
                          {job.company} • {job.country}
                        </p>
-                       {job.rating > 0 && (
-                         <StarRating rating={job.rating} size="h-4 w-4" />
-                       )}
+                      {(job.rating > 0 || applied) && (
+                        <div className="flex items-center gap-2">
+                          {job.rating > 0 && (
+                            <StarRating rating={job.rating} size="h-4 w-4" />
+                          )}
+                          {applied && (
+                            <span
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white"
+                              style={{ backgroundColor: '#6CA6CD' }}
+                            >
+                              Applied
+                            </span>
+                          )}
+                        </div>
+                      )}
                      </div>
                      <span className="text-sm font-medium dark:text-gray-300 text-gray-600">
                        {formatUpdatedAt(job.updatedAt)}
@@ -545,26 +789,37 @@ function BrowseJobsPage() {
                   </div>
                 </div>
 
-                <div className="flex lg:flex-col gap-3">
+                <div className="flex lg:flex-col gap-3" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={() => handleApplyNow(job.id)}
-                    className="flex-1 lg:flex-initial px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
-                    style={{ backgroundColor: '#6CA6CD' }}
+                    onClick={() => {
+                      if (!applied) {
+                        handleApplyNow(job.id);
+                      }
+                    }}
+                    disabled={applied}
+                    className={`flex-1 lg:flex-initial px-6 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                      applied ? 'text-white/80 cursor-not-allowed' : 'text-white'
+                    }`}
+                    style={{
+                      backgroundColor: applied ? 'rgba(108, 166, 205, 0.5)' : '#6CA6CD'
+                    }}
                     onMouseEnter={(e) => {
+                      if (applied) return;
                       e.target.style.backgroundColor = 'rgba(108, 166, 205, 0.9)';
                     }}
                     onMouseLeave={(e) => {
+                      if (applied) return;
                       e.target.style.backgroundColor = '#6CA6CD';
                     }}
                   >
-                    Apply Now
+                    {applied ? 'Applied' : 'Apply Now'}
                   </button>
                   {job.siteLink && (
                     <button
                       onClick={() => handleViewDetails(job.id)}
                       className="flex-1 lg:flex-initial px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors dark:border-[rgba(108,166,205,0.2)] border-[rgba(108,166,205,0.15)] dark:text-gray-200 text-gray-900 hover:bg-gray-50 dark:hover:bg-[rgba(108,166,205,0.1)]"
                     >
-                      View Listing
+                      View Source
                     </button>
                   )}
                   {job.contactEmail && (

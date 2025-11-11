@@ -10,6 +10,7 @@ const { findCVsByUserId, addCV, deleteCV, getCVFilePath, findCVById, CV_DIR } = 
 const { findCVDataByUserId, upsertCVData } = require('./utils/cvDataStorage');
 const { getAllJobs } = require('./utils/jobStorage');
 const { getAllJobPreferences, findJobPreferencesByUserId, upsertJobPreferences } = require('./utils/jobPreferencesStorage');
+const { findAppliedJobsByUserId, addAppliedJob } = require('./utils/appliedJobsStorage');
 
 const defaultPreferences = {
   emailNotifications: true,
@@ -1345,6 +1346,107 @@ app.post('/api/job-preferences', (req, res) => {
   }
 });
 
+// Applied jobs
+app.get('/api/applied-jobs/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required',
+      });
+    }
+
+    const record = findAppliedJobsByUserId(userId);
+    const jobs = record && Array.isArray(record.jobs) ? record.jobs : [];
+
+    return res.json({
+      success: true,
+      jobs,
+    });
+  } catch (error) {
+    console.error('Get applied jobs error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load applied jobs',
+    });
+  }
+});
+
+app.post('/api/applied-jobs', (req, res) => {
+  try {
+    const { userId } = req.body || {};
+    const jobPayload = req.body?.job || req.body || {};
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required',
+      });
+    }
+
+    const jobId =
+      jobPayload?.jobId !== undefined && jobPayload?.jobId !== null
+        ? String(jobPayload.jobId)
+        : jobPayload?.id !== undefined && jobPayload?.id !== null
+        ? String(jobPayload.id)
+        : null;
+
+    const jobTitle =
+      typeof jobPayload.jobTitle === 'string'
+        ? jobPayload.jobTitle
+        : typeof jobPayload.title === 'string'
+        ? jobPayload.title
+        : '';
+
+    const company =
+      typeof jobPayload.company === 'string'
+        ? jobPayload.company
+        : typeof jobPayload.companyName === 'string'
+        ? jobPayload.companyName
+        : '';
+
+    const country =
+      typeof jobPayload.country === 'string'
+        ? jobPayload.country
+        : typeof jobPayload.location === 'string'
+        ? jobPayload.location
+        : '';
+
+    const appliedDate =
+      typeof jobPayload.appliedDate === 'string'
+        ? jobPayload.appliedDate
+        : new Date().toISOString();
+
+    const result = addAppliedJob(userId, {
+      jobId,
+      jobTitle,
+      company,
+      country,
+      appliedDate,
+    });
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        jobs: result.record.jobs,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to save applied job',
+    });
+  } catch (error) {
+    console.error('Save applied job error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save applied job',
+    });
+  }
+});
+
 // Delete CV
 app.delete('/api/cv/:cvId', (req, res) => {
   try {
@@ -1420,7 +1522,9 @@ app.use((req, res) => {
       'POST /api/cv-data',
       'GET /api/jobs',
       'GET /api/job-preferences/:userId',
-      'POST /api/job-preferences'
+      'POST /api/job-preferences',
+      'GET /api/applied-jobs/:userId',
+      'POST /api/applied-jobs'
     ]
   });
 });
@@ -1449,6 +1553,8 @@ app.listen(PORT, () => {
   console.log(`  GET  http://localhost:${PORT}/api/jobs`);
   console.log(`  GET  http://localhost:${PORT}/api/job-preferences/:userId`);
   console.log(`  POST http://localhost:${PORT}/api/job-preferences`);
+  console.log(`  GET  http://localhost:${PORT}/api/applied-jobs/:userId`);
+  console.log(`  POST http://localhost:${PORT}/api/applied-jobs`);
   console.log(`\nCV Management:`);
   console.log(`  POST http://localhost:${PORT}/api/cv/upload`);
   console.log(`  GET  http://localhost:${PORT}/api/cv/user/:userId`);

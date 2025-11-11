@@ -1,11 +1,6 @@
 import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
-
-// Get API base URL and ensure it doesn't end with /api (we add that in the fetch calls)
-let apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-// Remove trailing slash and /api if present
-apiBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
-const API_BASE_URL = apiBaseUrl;
+import API_BASE_URL from '../utils/apiConfig';
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
 
 function SignupPage() {
