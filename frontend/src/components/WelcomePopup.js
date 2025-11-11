@@ -11,7 +11,7 @@ function WelcomePopup({ user, onClose }) {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
-  const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [] });
+  const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [], skills: [] });
   const [uploadedFile, setUploadedFile] = useState(null);
   const [existingCVsCount, setExistingCVsCount] = useState(0);
 
@@ -28,6 +28,7 @@ function WelcomePopup({ user, onClose }) {
           setJobPreferences({
             roles: parsed.roles || [],
             countries: parsed.countries || [],
+            skills: parsed.skills || [],
           });
         } catch (error) {
           console.error('Error parsing job preferences:', error);
@@ -43,12 +44,14 @@ function WelcomePopup({ user, onClose }) {
           setJobPreferences({
             roles: Array.isArray(data.preference.roles) ? data.preference.roles : [],
             countries: Array.isArray(data.preference.countries) ? data.preference.countries : [],
+            skills: Array.isArray(data.preference.skills) ? data.preference.skills : [],
           });
 
           // Sync to localStorage for quick reuse
           localStorage.setItem('jobPreferences', JSON.stringify({
             roles: Array.isArray(data.preference.roles) ? data.preference.roles : [],
             countries: Array.isArray(data.preference.countries) ? data.preference.countries : [],
+            skills: Array.isArray(data.preference.skills) ? data.preference.skills : [],
             timestamp: data.preference.updatedAt || new Date().toISOString(),
           }));
         }
@@ -105,12 +108,14 @@ function WelcomePopup({ user, onClose }) {
                 userId,
                 roles: jobPreferences.roles,
                 countries: jobPreferences.countries,
+                skills: Array.isArray(jobPreferences.skills) ? jobPreferences.skills : [],
                 updatedAt: timestamp,
               }),
             });
             localStorage.setItem('jobPreferences', JSON.stringify({
               roles: jobPreferences.roles,
               countries: jobPreferences.countries,
+              skills: Array.isArray(jobPreferences.skills) ? jobPreferences.skills : [],
               timestamp,
             }));
           } catch (error) {

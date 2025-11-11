@@ -1315,7 +1315,7 @@ app.get('/api/job-preferences/:userId', (req, res) => {
 
 app.post('/api/job-preferences', (req, res) => {
   try {
-    const { userId, roles, countries, updatedAt } = req.body;
+    const { userId, roles, countries, skills, updatedAt } = req.body;
 
     if (!userId) {
       return res.status(400).json({
@@ -1324,7 +1324,7 @@ app.post('/api/job-preferences', (req, res) => {
       });
     }
 
-    const result = upsertJobPreferences(userId, { roles, countries, updatedAt });
+    const result = upsertJobPreferences(userId, { roles, countries, skills, updatedAt });
     if (result.success) {
       return res.json({
         success: true,

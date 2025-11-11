@@ -59,8 +59,7 @@ const defaultWeeklyActivity = [
   { name: 'Wed', cvs: 1, jobs: 1 },
   { name: 'Thu', cvs: 4, jobs: 3 },
   { name: 'Fri', cvs: 0, jobs: 0 },
-  { name: 'Sat', cvs: 2, jobs: 1 },
-  { name: 'Sun', cvs: 1, jobs: 5 }
+  { name: 'Sat', cvs: 2, jobs: 1 }
 ];
 
 const recentJobsSeed = [
@@ -218,7 +217,7 @@ function normalizeWeeklyActivity(activity) {
       };
     });
 
-  return [...normalized, ...extraEntries];
+  return [...normalized, ...extraEntries].slice(0, 6);
 }
 
 function normalizeRecentJobs(jobs) {
@@ -252,7 +251,8 @@ function normalizeRecentJobs(jobs) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt));
+    .sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt))
+    .slice(0, 6);
 }
 
 function formatTimeAgo(dateString) {
@@ -729,10 +729,10 @@ function DashboardPage() {
         )}
 
         {/* Charts and Activity Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Activity Chart */}
           <div 
-            className="lg:col-span-2 rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
+            className="rounded-xl shadow-sm dark:bg-[#1A1F2E] bg-white dark:border dark:border-[rgba(108,166,205,0.2)]"
           >
             <div className="p-4 sm:p-6">
               <div className="mb-4">
@@ -740,7 +740,7 @@ function DashboardPage() {
                 <p className="text-sm dark:text-gray-400 text-gray-500">Your CV creation and job application trends</p>
               </div>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={weeklyActivity}>
+                <LineChart data={weeklyActivity.slice(0, 6)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(108, 166, 205, 0.1)" />
                   <XAxis
                     dataKey="name"
@@ -787,7 +787,7 @@ function DashboardPage() {
                 <p className="text-sm dark:text-gray-400 text-gray-500">Your latest applications and activity</p>
               </div>
               <div className="space-y-4">
-                {recentJobs.map((job) => (
+                {recentJobs.slice(0, 6).map((job) => (
                   <div key={job.id} className="flex gap-3">
                     <div 
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
@@ -883,7 +883,7 @@ function DashboardPage() {
                 <div>
                   <h3 className="mb-1 font-semibold dark:text-gray-200 text-gray-900">Update Profile</h3>
                   <p className="text-sm dark:text-gray-400 text-gray-500">
-                    Keep your information up to date
+                    Update Profile to provide perfect matching jobs
                   </p>
                 </div>
               </div>

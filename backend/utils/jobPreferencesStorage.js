@@ -36,17 +36,35 @@ function saveAllJobPreferences(preferences) {
 
 function findJobPreferencesByUserId(userId) {
   const allPrefs = getAllJobPreferences();
-  return allPrefs.find((pref) => pref.userId === userId);
+  const preference = allPrefs.find((pref) => pref.userId === userId);
+  
+  // Ensure backward compatibility - add skills array if missing
+  if (preference && !Array.isArray(preference.skills)) {
+    preference.skills = [];
+  }
+  
+  return preference;
 }
 
 function upsertJobPreferences(userId, data) {
   const allPrefs = getAllJobPreferences();
   const index = allPrefs.findIndex((pref) => pref.userId === userId);
 
+  // Determine skills value: use provided skills if it's an array, otherwise preserve existing or use empty array
+  let skillsValue = [];
+  if (index !== -1 && data.skills === undefined) {
+    // Preserve existing skills if not provided in update
+    skillsValue = Array.isArray(allPrefs[index].skills) ? allPrefs[index].skills : [];
+  } else {
+    // Use provided skills (even if empty array) or default to empty array
+    skillsValue = Array.isArray(data.skills) ? data.skills : [];
+  }
+
   const preference = {
     userId,
     roles: Array.isArray(data.roles) ? data.roles : [],
     countries: Array.isArray(data.countries) ? data.countries : [],
+    skills: skillsValue,
     updatedAt: data.updatedAt || new Date().toISOString(),
   };
 

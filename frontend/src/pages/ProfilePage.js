@@ -41,7 +41,7 @@ function ProfilePage() {
   const [skillsSaving, setSkillsSaving] = useState(false);
   const [skillsError, setSkillsError] = useState('');
   const [skillsMessage, setSkillsMessage] = useState('');
-  const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [] });
+  const [jobPreferences, setJobPreferences] = useState({ roles: [], countries: [], skills: [] });
   const [jobPrefLoading, setJobPrefLoading] = useState(true);
   const [jobPrefSaving, setJobPrefSaving] = useState(false);
   const [jobPrefError, setJobPrefError] = useState('');
@@ -124,14 +124,16 @@ function ProfilePage() {
         if (res.ok && data.success && data.preference) {
           const roles = Array.isArray(data.preference.roles) ? data.preference.roles : [];
           const countries = Array.isArray(data.preference.countries) ? data.preference.countries : [];
-          setJobPreferences({ roles, countries });
+          const skills = Array.isArray(data.preference.skills) ? data.preference.skills : [];
+          setJobPreferences({ roles, countries, skills });
           localStorage.setItem('jobPreferences', JSON.stringify({
             roles,
             countries,
+            skills,
             timestamp: data.preference.updatedAt || new Date().toISOString(),
           }));
         } else {
-          setJobPreferences({ roles: [], countries: [] });
+          setJobPreferences({ roles: [], countries: [], skills: [] });
         }
       } catch (error) {
         console.error('Fetch job preferences error:', error);
@@ -189,6 +191,42 @@ function ProfilePage() {
         localStorage.setItem('user', JSON.stringify(updatedUser));
         return updatedUser;
       });
+
+      // Also update job preferences with the new skills
+      try {
+        const jobPrefRes = await fetch(`${API_BASE_URL}/api/job-preferences`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId,
+            roles: jobPreferences.roles,
+            countries: jobPreferences.countries,
+            skills: updatedSkills,
+            updatedAt: new Date().toISOString(),
+          }),
+        });
+
+        const jobPrefData = await jobPrefRes.json();
+        if (jobPrefRes.ok && jobPrefData.success) {
+          // Update local job preferences state
+          setJobPreferences((prev) => ({
+            ...prev,
+            skills: updatedSkills,
+          }));
+          // Update localStorage
+          localStorage.setItem('jobPreferences', JSON.stringify({
+            roles: Array.isArray(jobPreferences.roles) ? jobPreferences.roles : [],
+            countries: Array.isArray(jobPreferences.countries) ? jobPreferences.countries : [],
+            skills: updatedSkills,
+            timestamp: new Date().toISOString(),
+          }));
+        }
+      } catch (error) {
+        console.error('Error updating job preferences with skills:', error);
+        // Don't fail the whole operation if job preferences update fails
+      }
 
       return true;
     } catch (error) {
@@ -283,6 +321,7 @@ const handleJobPrefChange = (data) => {
           userId,
           roles: jobPreferences.roles,
           countries: jobPreferences.countries,
+          skills: skills.length > 0 ? skills : (Array.isArray(jobPreferences.skills) ? jobPreferences.skills : []),
           updatedAt: new Date().toISOString(),
         }),
       });
@@ -298,6 +337,7 @@ const handleJobPrefChange = (data) => {
       localStorage.setItem('jobPreferences', JSON.stringify({
         roles: Array.isArray(jobPreferences.roles) ? jobPreferences.roles : [],
         countries: Array.isArray(jobPreferences.countries) ? jobPreferences.countries : [],
+        skills: skills.length > 0 ? skills : (Array.isArray(jobPreferences.skills) ? jobPreferences.skills : []),
         timestamp: new Date().toISOString(),
       }));
       return true;
