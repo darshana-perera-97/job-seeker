@@ -11,6 +11,7 @@ const { findCVDataByUserId, upsertCVData } = require('./utils/cvDataStorage');
 const { getAllJobs } = require('./utils/jobStorage');
 const { getAllJobPreferences, findJobPreferencesByUserId, upsertJobPreferences } = require('./utils/jobPreferencesStorage');
 const { findAppliedJobsByUserId, addAppliedJob } = require('./utils/appliedJobsStorage');
+const { getAllExploreJobs, filterJobsByPreferences } = require('./utils/exploreJobsStorage');
 
 const defaultPreferences = {
   emailNotifications: true,
@@ -1288,6 +1289,57 @@ app.get('/api/jobs', (req, res) => {
   }
 });
 
+// Explore Jobs endpoint - filtered by user preferences
+// IMPORTANT: This route must be defined before /api/job-preferences to avoid conflicts
+// Backend processes and filters data before sending to frontend
+app.get('/api/explore-jobs/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log(`[Explore Jobs] Request received for userId: ${userId}`);
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required',
+      });
+    }
+
+    // Step 1: Get all explore jobs from JSON file
+    const allJobs = getAllExploreJobs();
+    console.log(`[Explore Jobs] Step 1 - Loaded ${allJobs.length} total jobs from database`);
+
+    // Step 2: Get user preferences
+    const preference = findJobPreferencesByUserId(userId);
+    const userRoles = Array.isArray(preference?.roles) ? preference.roles : [];
+    const userCountries = Array.isArray(preference?.countries) ? preference.countries : [];
+    
+    console.log(`[Explore Jobs] Step 2 - User preferences loaded:`);
+    console.log(`  - Roles (${userRoles.length}):`, userRoles);
+    console.log(`  - Countries (${userCountries.length}):`, userCountries);
+
+    // Step 3: Process and filter jobs based on user preferences
+    // This filtering happens on the backend - only filtered results are sent to frontend
+    const filteredJobs = filterJobsByPreferences(allJobs, userRoles, userCountries);
+    console.log(`[Explore Jobs] Step 3 - Filtered ${allJobs.length} jobs down to ${filteredJobs.length} matching jobs`);
+    console.log(`[Explore Jobs] Step 4 - Sending only filtered jobs to frontend`);
+
+    // Step 4: Send only the filtered jobs to frontend
+    return res.json({
+      success: true,
+      jobs: filteredJobs, // Only filtered jobs are sent, not all jobs
+      totalJobs: allJobs.length,
+      filteredCount: filteredJobs.length,
+      hasPreferences: userRoles.length > 0 || userCountries.length > 0
+    });
+  } catch (error) {
+    console.error('[Explore Jobs] Error processing jobs:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load explore jobs',
+    });
+  }
+});
+
 // User job preferences
 app.get('/api/job-preferences/:userId', (req, res) => {
   try {
@@ -1521,6 +1573,7 @@ app.use((req, res) => {
       'GET /api/cv-data/:userId',
       'POST /api/cv-data',
       'GET /api/jobs',
+      'GET /api/explore-jobs/:userId',
       'GET /api/job-preferences/:userId',
       'POST /api/job-preferences',
       'GET /api/applied-jobs/:userId',
@@ -1532,6 +1585,18 @@ app.use((req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log(`\n=== VERIFYING ROUTES ===`);
+  // Verify explore-jobs route is registered
+  const routes = app._router.stack
+    .filter(r => r.route)
+    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`);
+  const exploreRoute = routes.find(r => r.includes('explore-jobs'));
+  if (exploreRoute) {
+    console.log(`✓ Explore Jobs route registered: ${exploreRoute}`);
+  } else {
+    console.log(`✗ WARNING: Explore Jobs route NOT found in registered routes!`);
+  }
+  console.log(`=== END ROUTE VERIFICATION ===\n`);
   console.log(`Available endpoints:`);
   console.log(`  GET  http://localhost:${PORT}/`);
   console.log(`  POST http://localhost:${PORT}/api/signup`);
@@ -1551,6 +1616,7 @@ app.listen(PORT, () => {
   console.log(`  POST http://localhost:${PORT}/api/profile/skills`);
   console.log(`\nJobs:`);
   console.log(`  GET  http://localhost:${PORT}/api/jobs`);
+  console.log(`  GET  http://localhost:${PORT}/api/explore-jobs/:userId`);
   console.log(`  GET  http://localhost:${PORT}/api/job-preferences/:userId`);
   console.log(`  POST http://localhost:${PORT}/api/job-preferences`);
   console.log(`  GET  http://localhost:${PORT}/api/applied-jobs/:userId`);

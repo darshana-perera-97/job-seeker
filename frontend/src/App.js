@@ -9,6 +9,7 @@ import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import AppliedJobsPage from './pages/AppliedJobsPage';
 import BrowseJobsPage from './pages/BrowseJobsPage';
+import ExploreJobsPage from './pages/ExploreJobsPage';
 import CreateCVPage from './pages/CreateCVPage';
 import MyCVsPage from './pages/MyCVsPage';
 import AboutPage from './pages/AboutPage';
@@ -69,6 +70,16 @@ function App() {
               <ProtectedRoute>
                 <DashboardLayout>
                   <BrowseJobsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/explore-jobs"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ExploreJobsPage />
                 </DashboardLayout>
               </ProtectedRoute>
             }

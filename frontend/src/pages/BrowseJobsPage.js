@@ -54,52 +54,21 @@ function StarIcon({ className, filled = false }) {
   );
 }
 
-function StarRating({ rating = 0, maxRating = 5, size = "h-4 w-4" }) {
+function RatingSlider({ rating = 0, maxRating = 5 }) {
   const normalizedRating = Math.min(Math.max(Number(rating) || 0, 0), maxRating);
-  const fullStars = Math.floor(normalizedRating);
-  const hasHalfStar = normalizedRating % 1 >= 0.5;
+  const percentage = (normalizedRating / maxRating) * 100;
   
   return (
-    <div className="flex items-center gap-0.5">
-      {Array.from({ length: maxRating }, (_, i) => {
-        if (i < fullStars) {
-          return (
-            <StarIcon 
-              key={i} 
-              className={`${size} text-yellow-400`} 
-              filled={true}
-            />
-          );
-        } else if (i === fullStars && hasHalfStar) {
-          return (
-            <div key={i} className="relative">
-              <StarIcon 
-                className={`${size} text-gray-300 dark:text-gray-600`} 
-                filled={false}
-              />
-              <div className="absolute inset-0 overflow-hidden" style={{ width: '50%' }}>
-                <StarIcon 
-                  className={`${size} text-yellow-400`} 
-                  filled={true}
-                />
-              </div>
-            </div>
-          );
-        } else {
-          return (
-            <StarIcon 
-              key={i} 
-              className={`${size} text-gray-300 dark:text-gray-600`} 
-              filled={false}
-            />
-          );
-        }
-      })}
-      {normalizedRating > 0 && (
-        <span className="ml-1 text-xs font-medium dark:text-gray-400 text-gray-600">
-          {normalizedRating.toFixed(1)}
-        </span>
-      )}
+    <div className="flex items-center w-24">
+      <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div 
+          className="h-full rounded-full transition-all duration-300"
+          style={{ 
+            width: `${percentage}%`,
+            backgroundColor: '#6CA6CD'
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -725,7 +694,7 @@ function BrowseJobsPage() {
                       {(job.rating > 0 || applied) && (
                         <div className="flex items-center gap-2">
                           {job.rating > 0 && (
-                            <StarRating rating={job.rating} size="h-4 w-4" />
+                            <RatingSlider rating={job.rating} />
                           )}
                           {applied && (
                             <span
